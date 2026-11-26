@@ -176,7 +176,7 @@ Workstream B, perturbation framework:
 
 Workstream C, robustness evaluation:
 
-- [ ] Reproducible environment and policy sampling
+- [x] Reproducible environment and policy sampling ([docs/REPRODUCIBLE_EVAL.md](./docs/REPRODUCIBLE_EVAL.md))
 - [ ] Fixed evaluation scenarios
 - [ ] Nominal, seen, unseen, and severity-based evaluation
 - [ ] Per-task metrics and robustness curves
@@ -209,10 +209,13 @@ Workstream C, robustness evaluation:
 | `docs/PRETRAINED_BASELINE_VALIDATION.md` | Native LeRobot evaluation of the pretrained checkpoint, and the horizon comparison |
 | `scripts/pretrained_baseline_validation.py` | Measurement harness for that validation |
 | `scripts/baseline_reproduction.py` | Measurement harness for the baseline report |
-| `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint |
+| `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint. It does not yet pass the separate eval seeds |
+| `docs/REPRODUCIBLE_EVAL.md` | Separate environment and policy seeds for evaluation |
+| `src/eval_noise.py` | Reset seeds and float32 flow noise keyed by episode id |
+| `tests/test_eval_noise.py` | CPU checks that those draws ignore batch layout |
 | `.github/workflows/ci.yml` | Active project CI |
 
-Planned project components, which are not in the tree yet: a perturbation framework, wiring those perturbations into the rollout, and the robustness evaluation that compares nominal, seen, and unseen conditions.
+Planned project components, which are not in the tree yet: a perturbation framework, wiring those perturbations into the rollout, fixed evaluation scenarios, and the robustness comparison across nominal, seen, and unseen conditions. Evaluation can now pin its reset seed and its initial flow noise. The default, with those seeds unset, is still the historical path.
 
 ## Acknowledgments and License
 

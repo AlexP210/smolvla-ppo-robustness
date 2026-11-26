@@ -30,9 +30,11 @@ import torch
 
 try:
     from .env_libero import adapt_observation, set_initial_states, terminal_success
+    from .eval_noise import env_reset_seed, initial_flow_noise, resolve_episode_ids
     from .rollout import exec_action
 except ImportError:
     from env_libero import adapt_observation, set_initial_states, terminal_success
+    from eval_noise import env_reset_seed, initial_flow_noise, resolve_episode_ids
     from rollout import exec_action
 
 N_INIT_STATES = 50  # how many stored starting configurations the suite provides
@@ -42,7 +44,9 @@ N_INIT_STATES = 50  # how many stored starting configurations the suite provides
 def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[str, int]], *,
              episodes_per_task: int, seed: int, horizon: int, device,
              events_path: Optional[str] = None, n_action_steps: int = 1,
-             cycle: Optional[int] = None) -> float:
+             cycle: Optional[int] = None,
+             env_seed: Optional[int] = None, policy_seed: Optional[int] = None,
+             episode_ids: Optional[Sequence[int]] = None) -> float:
     """Run a fixed number of episodes per task and return the pooled success rate.
 
     One episode per task runs in each batch, so the batch index and the task together identify an episode. Every
@@ -53,6 +57,11 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
     evaluates periodically appends to the same file, so without it the records of two checkpoints are
     indistinguishable, and a reader keyed on task and batch alone silently keeps whichever arrived last while
     reporting the file as complete.
+
+    `env_seed` and `policy_seed` are optional and independent. Leave both unset and the reset rule and the
+    global noise draw are the historical ones, including their dependence on the batch width. Set them and each
+    episode id gets its own reset seed and its own standard-normal flow noise, neither of which depends on the
+    other ids in the batch. The integration itself is still the deterministic Euler step.
 
     `horizon` counts ENVIRONMENT STEPS, the same unit the episode cap uses, and so does the recorded success step.
     That has to be said because the loop below is over decisions, and each decision executes several environment
@@ -74,6 +83,8 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
     successes = np.zeros(len(tasks), dtype=np.int64)
     attempts = np.zeros(len(tasks), dtype=np.int64)
 
+    pinned = env_seed is not None or policy_seed is not None
+    ids = resolve_episode_ids(episode_ids, n_envs) if pinned else None
     steps_per_decision = max(1, int(n_action_steps))
     n_decisions = max(1, int(horizon) // steps_per_decision)
     if int(horizon) % steps_per_decision:
@@ -83,8 +94,16 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
 
     try:
         for batch in range(episodes_per_task):
-            set_initial_states(ve, "eval", n_envs, per_task=1, eval_batch=batch, n_init_states=N_INIT_STATES)
-            raw, _ = ve.reset(seed=[eval_seed_base + batch * n_envs + i for i in range(n_envs)])
+            if env_seed is None:
+                set_initial_states(ve, "eval", n_envs, per_task=1, eval_batch=batch, n_init_states=N_INIT_STATES)
+                reset_seeds = [eval_seed_base + batch * n_envs + i for i in range(n_envs)]
+            else:
+                # One initial state per episode id. The previous rule gave every worker in a batch the same
+                # id, and the reset seed grew with the batch width, so removing a worker changed the others.
+                reset_seeds = [env_reset_seed(env_seed, ids[i], batch) for i in range(n_envs)]
+                ve.set_attr("init_state_id", [int(ids[i]) % N_INIT_STATES for i in range(n_envs)])
+                ve.set_attr("_reset_stride", [0] * n_envs)
+            raw, _ = ve.reset(seed=reset_seeds)
 
             solved = np.zeros(n_envs, dtype=bool)
             finished = np.zeros(n_envs, dtype=bool)
@@ -92,8 +111,14 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
 
             for t in range(n_decisions):
                 obs = adapt_observation(raw, env_pre, task_prompts)
+                noise = None
+                if policy_seed is not None:
+                    noise = initial_flow_noise(
+                        policy_seed, ids, t,
+                        int(model.lerobot_cfg.chunk_size), int(model.lerobot_cfg.max_action_dim),
+                        batch=batch, device=device)
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_cuda):
-                    sampled = model.sample_actions(obs, mode="eval")
+                    sampled = model.sample_actions(obs, mode="eval", noise=noise)
                 for k in range(steps_per_decision):
                     raw, _r, term, trunc, info = ve.step(exec_action(model, sampled, env_post, step=k))
                     term_a = np.asarray(term).reshape(-1).astype(bool)
@@ -115,15 +140,21 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
                 os.makedirs(os.path.dirname(events_path) or ".", exist_ok=True)
                 with open(events_path, "a") as fh:
                     for i in range(n_envs):
-                        fh.write(json.dumps({
+                        record = {
                             "cycle": None if cycle is None else int(cycle),
                             "task_idx": int(i), "batch": int(batch), "env": int(i),
-                            "seed": int(eval_seed_base + batch * n_envs + i),
+                            "seed": int(reset_seeds[i]),
                             "success": bool(solved[i]), "succ_step": int(success_step[i]),
-                            # Both units, written down, so no reader has to work out which one a number is in.
-                            "horizon": int(n_decisions * steps_per_decision),
-                            "decisions": int(n_decisions),
-                            "steps_per_decision": int(steps_per_decision)}) + "\n")
+                        }
+                        if pinned:
+                            record["episode_id"] = int(ids[i])
+                            record["env_seed"] = None if env_seed is None else int(env_seed)
+                            record["policy_seed"] = None if policy_seed is None else int(policy_seed)
+                        # Both units, written down, so no reader has to work out which one a number is in.
+                        record["horizon"] = int(n_decisions * steps_per_decision)
+                        record["decisions"] = int(n_decisions)
+                        record["steps_per_decision"] = int(steps_per_decision)
+                        fh.write(json.dumps(record) + "\n")
     finally:
         model.config.noise_method = prev_method
         model.lerobot_cfg.num_steps = prev_steps
