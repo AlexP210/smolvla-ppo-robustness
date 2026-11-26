@@ -4,7 +4,22 @@ This repository is a course research project on reinforcement-learning post-trai
 
 The previous LeRobot 0.7.1 line is not in this branch. It is `archive/lerobot-0.7.1`. The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
 
-No robustness experiment and no PPO training run has been executed in this project. Sections below separate what the upstream trainer already contains from work that is planned. A passing CI check is not evidence that training works.
+A passing CI check is not evidence that training works. The measurements that do exist are separated below. Robustness perturbations are still not implemented.
+
+## What has been measured
+
+Reports: [docs/BASELINE_REPRODUCTION.md](./docs/BASELINE_REPRODUCTION.md) and [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md). The policy predicts 50 actions per call. Upstream training and evaluation execute one of them (`--action_steps 1`, and `n_action_steps` is 1 in the checkpoint). That horizon was not changed.
+
+These four statements are different, and only the first three have been observed:
+
+| Claim | Status |
+| --- | --- |
+| Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. That is one episode, not a success rate. |
+| PPO optimization runs | One stored-versus-recomputed update had ratio 1.0 before any parameter moved. Gradients reached the action expert, action head, and critic. Frozen parameters, including the vision tower, did not change. |
+| Multi-cycle training collects reward | Twenty upstream updates on four copies of task 0 finished. The first-step ratio was 1.0. Three collection windows each contained one sparse success. |
+| PPO improves task success | Not established. On the same eight seeds, the initialization succeeded twice and the checkpoint after 20 updates succeeded zero times. Eight episodes do not measure a change in success. |
+
+The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
 
 ## Project Title
 
@@ -14,7 +29,7 @@ Robustness of Vision-Language-Action Models through Reinforcement Learning Post-
 
 Supervised VLA policies imitate demonstration data. A policy that succeeds on the nominal training distribution can still fail when appearance, object placement, or physical conditions shift. Task success on the original distribution does not, by itself, measure that sensitivity.
 
-This project studies reinforcement-learning post-training as a way to improve both nominal task performance and robustness under those shifts. The testbed is a pretrained SmolVLA policy in simulation on LIBERO. The trainer in this tree is proximal policy optimization on a flow-matching action head: one integration step is stochastic, the log-probability is restricted to the executed part of the action chunk, advantages come from generalized advantage estimation on a sparse success reward, and the critic is a separate value head. That code is upstream. This project has not run it, and it publishes no success rate of its own. The upstream README states the same limit: no results are reported there, and the clip in that README is footage rather than a measurement.
+This project studies reinforcement-learning post-training as a way to improve both nominal task performance and robustness under those shifts. The testbed is a pretrained SmolVLA policy in simulation on LIBERO. The trainer in this tree is proximal policy optimization on a flow-matching action head: one integration step is stochastic, the log-probability is restricted to the executed part of the action chunk, advantages come from generalized advantage estimation on a sparse success reward, and the critic is a separate value head. That code is upstream. The runs in [docs/BASELINE_REPRODUCTION.md](./docs/BASELINE_REPRODUCTION.md) and [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md) show that this trainer can be executed and can observe a sparse reward. They do not show that PPO improves success. The upstream README reports no success rate of its own, and the clip in that README is footage rather than a measurement.
 
 ## Research Questions
 
@@ -27,8 +42,8 @@ This project studies reinforcement-learning post-training as a way to improve bo
 
 The planned comparison uses three policy configurations on LIBERO:
 
-- **Pretrained supervised SmolVLA without RL.** Load `HuggingFaceVLA/smolvla_libero` and evaluate with deterministic sampling (`mode="eval"` in `src/flow_sde.py`). No reinforcement-learning update. Not yet run here.
-- **Nominal PPO post-training.** The same initialization, then the upstream trainer (`src/train_flow_rl.py`) on unperturbed LIBERO tasks. The implementation is in this tree. It has not been run here, so this README does not claim that training succeeds.
+- **Pretrained supervised SmolVLA without RL.** Load `HuggingFaceVLA/smolvla_libero` and evaluate with deterministic integration (`mode="eval"` in `src/flow_sde.py`). No reinforcement-learning update. One episode has been run. A success rate has not.
+- **Nominal PPO post-training.** The same initialization, then the upstream trainer (`src/train_flow_rl.py`) on unperturbed LIBERO tasks. A 20-update pilot on one task has been run. It collected reward. It did not establish a gain in success.
 - **Perturbation-aware PPO post-training.** The same initialization, then PPO while training episodes include the perturbations below. Not implemented. The upstream rollout has no perturbation hook.
 
 The upstream reward is sparse and terminal (`terminal_success` in `src/env_libero.py`): 1 when the task is solved on that step, otherwise 0. There is no shaping term. `src/gae.py` computes advantages over fixed-length segments and uses a bootstrap value when a segment ends before the episode does. `src/ppo_step.py` applies a clipped policy surrogate, a dual clip, and a clipped Huber value loss to the stored trajectory. `src/horizon_gate.py` refuses a run whose training horizon and evaluation horizon disagree.
@@ -53,9 +68,9 @@ Evaluation of the three configurations is planned. The intended protocol is:
 - **Seen perturbations.** Success under perturbations that perturbation-aware training was allowed to use.
 - **Unseen perturbations.** Success under held-out perturbations.
 
-Reported quantities, once experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. This README does not report any of those numbers. Neither does the upstream README.
+Reported quantities, once the robustness experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. The numbers recorded so far are the execution checks in the two reports linked above. They are not those robustness results. The upstream README does not report success rates either.
 
-The upstream scoring entry point is `src/eval_cli.py`. It refuses a success rate until `src/completeness_gate.py` accepts the log, and it refuses a budget longer than the horizon that was actually run. `scripts/run_gates.sh` is the upstream mechanical check. It is not the robustness protocol above, and it has not been completed in this project (see Continuous Integration).
+The upstream scoring entry point is `src/eval_cli.py`. It refuses a success rate until `src/completeness_gate.py` accepts the log, and it refuses a budget longer than the horizon that was actually run. `scripts/run_gates.sh` is the upstream mechanical check. It is not the robustness protocol above. On the `smolvla-flow-rl` environment it has been run, including the invariant file, and it passed. That pass is a software check. It is not a LIBERO result.
 
 ## Checkpoint
 
@@ -84,7 +99,7 @@ python scripts/download_base_policy.py --out /path/to/base
 bash examples/single_task_contact.sh /path/to/base
 ```
 
-The contact script is the upstream setup check. It needs a CUDA GPU, bf16, a downloaded checkpoint, and LIBERO. It has not been run for this project. Training requires fourteen arguments with no defaults (`python src/train_flow_rl.py --help`). Evaluation is `python src/eval_cli.py --help`. For headless rendering the upstream README sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl`.
+The contact script is the upstream setup check. It needs a CUDA GPU, bf16, a downloaded checkpoint, and LIBERO. That script itself has not been launched. The pilot in [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md) calls `src/train_flow_rl.py` directly, with the contact example's noise, learning rates, discount, and rollout length, and with the recommended `expert_full_vlm_lora` regime rather than the example's illustrative `full` regime. Training requires fourteen arguments with no defaults (`python src/train_flow_rl.py --help`). Evaluation is `python src/eval_cli.py --help`. For headless rendering the upstream README sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl`. On this machine, robosuite's default file log at `/tmp/robosuite.log` is owned by another account. The conda environment sets `FILE_LOGGING_LEVEL = None` so that handler is not opened. The workaround is local to the environment and is written up in the baseline report.
 
 There is no project command yet for perturbation generation or the robustness comparison.
 
@@ -119,17 +134,19 @@ These need dependencies or hardware this job does not install. None of them has 
 | --- | --- |
 | `python tests/test_invariants.py` | Imports `train_flow_rl`, which imports LeRobot (`lerobot.policies.smolvla`, `lerobot.envs.libero`) and the LIBERO package. Also needs PyTorch, NumPy, and `peft` for the surface-gate tests. CPU is enough for the arithmetic tests; the import is not. |
 | `bash scripts/run_gates.sh` | Runs the two commands above, then the invariant file. If `~/.libero/config.yaml` is missing it skips the invariants and exits non-zero. The first `import libero.libero` is interactive. |
-| `bash examples/single_task_contact.sh` | GPU, bf16, a downloaded `HuggingFaceVLA/smolvla_libero` checkpoint, and LIBERO. This is a training smoke test. It has not been run here. |
-| `python src/train_flow_rl.py`, `python src/eval_cli.py` | Same simulator, checkpoint, and (for training) bf16 GPU requirements. Not run here. |
+| `bash examples/single_task_contact.sh` | GPU, bf16, a downloaded `HuggingFaceVLA/smolvla_libero` checkpoint, and LIBERO. The script itself has not been launched. A separate 20-update call to the trainer has. |
+| `python src/train_flow_rl.py`, `python src/eval_cli.py` | Same simulator, checkpoint, and (for training) bf16 GPU requirements. The trainer has been run for 20 updates. `eval_cli.py` has not been the entry point; `src/evaluate.py` has. |
 
 ## Development Roadmap
 
 - [x] Adopt `smolvla_flow_rl` as the training history (`flow-rl`, tag `flow-rl-baseline`)
-- [ ] Nominal policy evaluation on `HuggingFaceVLA/smolvla_libero`
-- [ ] One PPO update on one LIBERO task, with peak memory recorded
+- [x] Pretrained inference on one LIBERO episode, and a ten-task screen that is not a success rate
+- [x] One PPO update on one LIBERO task, with peak memory recorded
+- [x] A 20-update nominal pilot that collects sparse reward and does not establish learning
+- [ ] A matched evaluation large enough to say whether PPO changed success
 - [ ] Perturbation framework (seen and unseen)
 - [ ] Robustness evaluation (nominal, seen, unseen)
-- [ ] Nominal PPO post-training, as an experiment with reported episodes
+- [ ] Nominal PPO post-training long enough to test a change in success
 - [ ] Perturbation-aware PPO post-training
 - [ ] Generalization and failure analysis
 
@@ -152,6 +169,10 @@ These need dependencies or hardware this job does not install. None of them has 
 | `NOTICE`, `LICENSE`, `THIRD_PARTY_LICENSES/`, `CHANGES_FROM_UPSTREAM.md` | Apache-2.0, attribution, and the record of what was adapted |
 | `README_UPSTREAM.md` | Preserved upstream README |
 | `docs/PROJECT_PLAN.md` | Technical plan for this course project |
+| `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
+| `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
+| `scripts/baseline_reproduction.py` | Measurement harness for the baseline report |
+| `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint |
 | `.github/workflows/ci.yml` | Active project CI |
 
 Planned project components, which are not in the tree yet: a perturbation framework, wiring those perturbations into the rollout, and the robustness evaluation that compares nominal, seen, and unseen conditions.
@@ -164,6 +185,6 @@ The training code is `smolvla_flow_rl` by Mehmet Turan Yardimci, Apache License 
 - **LeRobot.** Dependency and, for `src/flow_sde.py` and `src/action_model.py`, an upstream at version 0.4.4. Apache-2.0. <https://github.com/huggingface/lerobot>
 - **SmolVLA.** Shukor et al., "SmolVLA: A Vision-Language-Action Model for Affordable and Efficient Robotics," arXiv:2506.01844, 2025.
 - **LIBERO.** Liu et al., "LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning," arXiv:2306.03310, 2023. No LIBERO source is vendored. The MIT notices for LIBERO and robosuite are in `THIRD_PARTY_LICENSES/`.
-- **PPO.** Schulman et al., "Proximal Policy Optimization Algorithms," arXiv:1707.06347, 2017. The implementation in this tree follows the RLinf operators named in `src/reference_ops.py`. This project has not verified it experimentally.
+- **PPO.** Schulman et al., "Proximal Policy Optimization Algorithms," arXiv:1707.06347, 2017. The implementation in this tree follows the RLinf operators named in `src/reference_ops.py`. This project has checked that one update reproduces its stored likelihood and that a short run can apply further updates. It has not shown that those updates improve LIBERO success.
 
 Copyright for the upstream files remains with their authors, as stated in those files and in `NOTICE`. This repository is distributed under the Apache License, Version 2.0. See [LICENSE](./LICENSE).
