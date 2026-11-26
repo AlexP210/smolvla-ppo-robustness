@@ -1,316 +1,284 @@
-# Project plan: SmolVLA robustness through PPO post-training
+# Project plan
 
-The working branch is `flow-rl`. It is the git history of `smolvla_flow_rl`, not a merge with LeRobot. Tag `flow-rl-baseline` is the unmodified upstream commit `c161af2100610cf9f411bce23ad57180eb771d44`. The migration commit on top of that tag adds this file, the project README, `AGENTS.md`, and `.github/workflows/ci.yml`. It does not change the trainer. No LIBERO episode and no PPO update has been run on this branch. A passing syntax gate is not evidence that training works.
+`origin/flow-rl` at `3c357d62` is the development branch. The baseline reproduction and the pretrained baseline validation are merged. This file is the contract for the next parallel work. It does not implement that work.
 
-The LeRobot 0.7.1 history is `archive/lerobot-0.7.1` at `462e4571e1bf7a37ef15b4594746c6600e8a3621`. Tag `original-baseline` is `b07adcc5e3ce42c26a248236dbb3571f84c28c43`. Sections 1–6 describe that archived tree. They are not a map of the files in this checkout.
+Completed measurements, which this plan does not reopen:
 
-Remotes: `origin` is `git@github.com:AlexP210/smolvla-ppo-robustness.git`. `upstream` is `https://github.com/mturan33/smolvla_flow_rl`. `upstream-lerobot` is `https://github.com/huggingface/lerobot.git`. GitHub's default branch is still `main` until an admin changes it. See section 7.4.
+- [docs/BASELINE_REPRODUCTION.md](./BASELINE_REPRODUCTION.md): one deterministic LIBERO-Long episode and one PPO update with ratio 1.0.
+- [docs/NOMINAL_PPO_PILOT.md](./NOMINAL_PPO_PILOT.md): 20 upstream updates, three sparse successes, and a matched 2/8 versus 0/8 comparison that does not establish learning.
+- [docs/PRETRAINED_BASELINE_VALIDATION.md](./PRETRAINED_BASELINE_VALIDATION.md): native LeRobot 0.4.4 scored 53/100 and 46/100 on LIBERO-Long at one and ten executed actions. Float32 Flow RL integration matched the native sampler on a shared observation and a shared noise tensor. The published leaderboard Long entry is 0.60. The exact protocol behind that entry is not fully established.
 
-Status labels used below:
+The trainer default remains one executed action out of a 50-action chunk. The checkpoint remains `HuggingFaceVLA/smolvla_libero`, revision `6721902bc4d61e50a3bfdb11dfb4cb626f05d102`.
 
-| Label | Meaning |
+## Frozen surface
+
+These files stay as they are on `3c357d62` unless a later task names a concrete bug:
+
+| File | What stays |
 | --- | --- |
-| Implemented and covered by an in-tree test | The behavior is in code and an upstream test asserts it. Those tests are not part of `.github/workflows/ci.yml` and were not re-run here. |
-| Implemented, not exercised here | The behavior is in code. The tests inspected for this plan do not run that path, or they skip the simulator. |
-| Requires modification | An existing function is the integration point, but it does not do this job as written. |
-| Requires new implementation | No class or function in this tree performs this step. |
+| `src/flow_sde.py` | Euler step, one stochastic training step, deterministic eval |
+| `src/reference_ops.py` | Clipped surrogate, dual clip, clipped Huber value loss |
+| `src/gae.py` | GAE recursion and advantage standardization |
+| `src/ppo_step.py` | The loss line `pg_loss + value_coef * v_loss + kl_coef * kl_penalty` and `optimizer.step` |
+| `src/value_head.py`, `src/action_model.py` | Critic hook and pretrained wrapper |
+| `src/horizon_gate.py` | Train and eval horizons must agree, in environment steps |
+| `requirements.txt`, `environment.yml` | `lerobot[smolvla]>=0.4.4,<0.5` and `hf-libero>=0.1.3,<0.2` |
 
-## 1. There is no SmolVLA PPO implementation
+Workstream A may append detached statistics to the dictionary `ppo_step_stored` already returns. That addition is not a change to the loss, the generator, or the optimizer. `--action_steps` stays default 1 in `src/train_flow_rl.py` and `src/eval_cli.py`.
 
-The headings in sections 1–6 refer to the archived LeRobot 0.7.1 tree (`archive/lerobot-0.7.1`). This checkout is the `smolvla_flow_rl` trainer. Its PPO code is `src/flow_sde.py`, `src/ppo_step.py`, `src/gae.py`, `src/value_head.py`, and `src/train_flow_rl.py`. That code has not been executed here.
+`archive/lerobot-0.7.1` and `origin/main` stay at `462e4571`. Do not merge them into `flow-rl`.
 
-`SmolVLAPolicy` (`src/lerobot/policies/smolvla/modeling_smolvla.py`) is a flow-matching policy. `VLAFlowMatching.forward` returns an MSE loss between the flow target `u_t` and the predicted vector field `v_t`. `VLAFlowMatching.sample_actions` integrates that field with `euler_integrate` for `config.num_steps` (10 in the class default and in the checkpoints below). Neither method returns a log-probability, a value, or an advantage.
+## How the three workstreams share the tree
 
-The only registered RL algorithm is SAC:
+Each workstream branches from current `flow-rl` and opens its own pull request back to `flow-rl`. CI on that base runs `scripts/check_syntax.py` and `scripts/check_import_closure.py`. New tests are CPU scripts under `tests/`. They must not import LIBERO, MuJoCo, or a checkpoint. Do not edit `scripts/run_gates.sh` or `.github/workflows/ci.yml` in a feature branch: every workstream would then conflict on the same two files. A test is run locally with `python tests/test_<name>.py`.
 
-- `get_algorithm_class` in `src/lerobot/rl/algorithms/factory.py` accepts `"sac"` and raises otherwise.
-- `SACAlgorithm` (`src/lerobot/rl/algorithms/sac/sac_algorithm.py`) calls `self.policy.actor(...)`, which must return actions and `log_probs`.
-- That actor is `GaussianActorPolicy` (`src/lerobot/policies/gaussian_actor/modeling_gaussian_actor.py`). `SACAlgorithmConfig.from_policy_config` is typed for `GaussianActorConfig`.
-- `GaussianActorPolicy` raises if asked to chunk actions. SmolVLA's default `chunk_size` and `n_action_steps` are 50.
+Import closure reads the git index. A new module is invisible to the gate until `git add`. Third-party imports must already be in `requirements.txt`. No new package pin is part of this contract.
 
-`src/lerobot/rl/actor.py` (`act_with_policy`) and `src/lerobot/rl/gym_manipulator.py` (`RobotEnv`, `make_robot_env`) roll out that SAC stack on a real robot. `HILSerlRobotEnvConfig.sim_settings` raises `NotImplementedError` for `make_env` and `lerobot-eval`. TD-MPC (`src/lerobot/policies/tdmpc/modeling_tdmpc.py`) computes an advantage for its own latent model. It is not wired to SmolVLA or LIBERO.
+Two older branches exist and are not on `flow-rl`:
 
-| Component | Status |
+- `feature/ppo-diagnostics` at `dcf05837` logs cycle-wide PPO statistics from detached tensors.
+- `feature/reproducible-eval` at `9b09e993` pins evaluation reset seeds and initial flow noise.
+
+Both also rewrite `README.md` and `docs/NOMINAL_PPO_PILOT.md` against an older text. Cherry-pick the `src/` and `tests/` files onto a fresh branch. Do not merge either branch whole.
+
+### Shared schemas
+
+One JSON object, written by the feature that owns it and read by the others. Fields are additive. A reader ignores unknown keys. A writer does not remove a key that is already on `flow-rl`.
+
+**Run record.** `src/run_config.py` already stores the training argv. Workstream A extends that record with the hyperparameter block below. Workstreams B and C do not write it.
+
+```json
+{
+  "schema": "ppo_run_v1",
+  "seed": 0,
+  "regime": "expert_full_vlm_lora",
+  "action_steps": 1,
+  "episode_length": 520,
+  "rollout_steps": 32,
+  "noise_level": 0.1,
+  "gamma": 0.99,
+  "gae_lambda": 0.95,
+  "clip_range": 0.2,
+  "value_coef": 0.5,
+  "grad_clip": 1.0,
+  "kl_coef": 0.0,
+  "actor_lr": 1e-5,
+  "critic_lr": 1e-3
+}
+```
+
+**Perturbation spec.** Owned by Workstream B. Severity 0 is the identity.
+
+```json
+{
+  "schema": "perturbation_v1",
+  "name": "brightness",
+  "family": "visual",
+  "split": "seen",
+  "severity": 2,
+  "params": {"delta": 0.2}
+}
+```
+
+`family` is `visual` or `spatial`. `split` is `seen`, `unseen`, or `nominal`. `nominal` and severity 0 leave the observation and the simulator state unchanged. A spec cannot carry both `seen` and `unseen`.
+
+**Evaluation scenario.** Owned by Workstream C. `action_steps` is recorded and stays 1 unless a later task changes the trainer default.
+
+```json
+{
+  "schema": "eval_scenario_v1",
+  "suite": "libero_10",
+  "task_ids": [0],
+  "episodes": 10,
+  "init_state_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "env_seed": 0,
+  "policy_seed": 0,
+  "horizon": 520,
+  "action_steps": 1,
+  "perturbation": null
+}
+```
+
+`perturbation` is either `null` or a `perturbation_v1` object. The same scenario file is the paired comparison: two checkpoints, one scenario, including the same noise draws.
+
+### Call order that keeps the branches apart
+
+1. Workstream C lands keyword-only `env_seed` and `policy_seed` on `evaluate`, both defaulting to `None`. `None` keeps today's reset and today's global noise draw.
+2. Workstream B then lands keyword-only `perturbation=None` on `collect_rollout` and `evaluate`. `None` is the identity.
+3. Workstream A edits `ppo_step_stored`'s returned dictionary and the cycle record in `train_flow_rl.py`. It does not take the observation hook.
+
+`README.md` is append-only for these branches. Each workstream adds its own subsection and leaves "What has been measured" unchanged.
+
+## Workstream A: RL post-training
+
+Nominal PPO only. Perturbation-aware training waits until B's hook is on `flow-rl`, and it is not one of the four features below.
+
+### Features
+
+| Branch | Delivers |
 | --- | --- |
-| SmolVLA flow-matching loss and chunked action sampling | Implemented, not exercised here |
-| `SmolVLAPolicy.prepare_images` uint8 to `[-1, 1]` | Implemented and covered by `tests/policies/smolvla/test_modeling_smolvla.py` |
-| SAC actor-learner, replay buffer, critic | Implemented, not exercised here. Incompatible interface with SmolVLA |
-| PPO clip objective, GAE, value baseline for SmolVLA | Requires new implementation |
-| Stochastic log-probability of a SmolVLA action chunk | Requires new implementation |
+| `feature/a-ppo-diagnostics` | Cycle log of advantages, rewards, values, returns, explained variance, approximate KL, ratios, clip fraction, losses, and gradient norms |
+| `feature/a-reward-advantage` | A CPU report over a stored rollout: reward counts, per-environment sums, advantage moments before and after standardization, and the fraction of the return that is the terminal success |
+| `feature/a-nominal-learning` | One documented training run long enough to plot success against update, using the diagnostics from the first branch |
+| `feature/a-hparams` | A checked-in config file for that run, and a loader that refuses a file whose `action_steps` is not 1 |
 
-## 2. What the existing training and evaluation paths actually do
+`feature/a-ppo-diagnostics` starts first. The analysis branch can be written against synthetic tensors in parallel. The learning run waits for the diagnostics to be on `flow-rl`. The hyperparameter file can be drafted in parallel and is accepted only when the learning run uses it.
 
-These are two separate pipelines. They do not form one PPO loop.
+### Files
 
-### Supervised training
+Modify, narrowly:
 
-`lerobot_train.train` (`src/lerobot/scripts/lerobot_train.py`) loads a dataset and calls `update_policy`. `update_policy` runs `policy(batch)` and steps AdamW. For SmolVLA that call is `SmolVLAPolicy.forward`, which is the flow-matching MSE. `reduction="none"` exists for sample weighting. It is not an advantage.
+- `src/ppo_step.py`: add `approx_kl` and `ratio_min` computed from `ratio.detach()` after the surrogate is formed. The loss expression stays on its current line.
+- `src/train_flow_rl.py`: snapshot advantages before and after `normalize_advantages`, aggregate every optimizer step, and store the aggregate under a `diagnostics` key beside the existing last-step fields. The first-update ratio check still reads the first step's `ratio_mean`.
+- `src/run_config.py`: accept the `ppo_run_v1` block when the hyperparameter feature writes a config. Existing argv dumps stay valid.
 
-`make_smolvla_pre_post_processors` (`src/lerobot/policies/smolvla/processor_smolvla.py`) renames observations, normalizes with dataset stats, appends a newline to the task string, tokenizes with `config.vlm_model_name`, and moves tensors to the device. The postprocessor unnormalizes actions.
+New:
 
-Default `SmolVLAConfig` freezes the vision encoder and sets `train_expert_only=True` and `load_vlm_weights=False`. A checkpoint's own `config.json` replaces those defaults on `from_pretrained`. The LIBERO checkpoints set both freeze flags to false (section 3).
+- `src/ppo_diagnostics.py`
+- `tests/test_ppo_diagnostics.py`
+- `tests/test_reward_advantage.py`
+- `docs/PPO_DIAGNOSTICS.md`
+- `configs/nominal_ppo_libero10.json` on the hyperparameter branch only
+- `scripts/report_rollout_advantages.py` on the analysis branch only
 
-### LIBERO environment
+Do not modify `src/gae.py`, `src/flow_sde.py`, `src/reference_ops.py`, `src/rollout.py`, or `src/evaluate.py`.
 
-`make_env` (`src/lerobot/envs/factory.py`) builds from `EnvConfig.sim_settings()`. `LiberoEnvConfig` (`src/lerobot/envs/configs.py`) registers `"libero"` and passes `is_libero_plus`, cameras, `init_states`, `control_mode`, and image size into `env_fns` (`src/lerobot/sim/integrations/libero.py`).
+### Acceptance and tests
 
-`LiberoEnv` defers `OffScreenRenderEnv` to the first `reset` via `_ensure_env`. `reset`:
+Diagnostics: a unit test shows approximate KL is 0 when the ratio is 1, explained variance is 1 when predictions equal returns and is null when returns are constant, and the cycle aggregate averages every step rather than the last. The loss tensor's formula is unchanged, and the test does not call the optimizer.
 
-1. Calls the inner `reset` and `seed`.
-2. If `init_states` is true, calls `set_init_state` on a row of `get_task_init_states` and advances `init_state_id` by `n_envs`.
-3. Steps `num_steps_wait` (default 10) with `get_libero_dummy_action()` (`[0, 0, 0, 0, 0, 0, -1]`).
-4. Sets `robot.controller.use_delta` from `control_mode` (`"relative"` or `"absolute"`).
+Reward analysis: on a synthetic 0/1 reward rectangle, the report counts successes per environment and shows the advantage mean is 0 after the existing standardization. It does not invent values for the 20-update pilot log. That log has no advantage vectors.
 
-`step` forwards `action` to the inner env, then sets `info["is_success"]` from `self._env.check_success()`. `terminated` is the inner `done` or that success flag. The float `reward` is whatever `OffScreenRenderEnv.step` returns. This repository does not define that reward.
+Learning run: the metrics file contains the diagnostics object on every cycle, the first ratio is 1 within the existing tolerance, and the report states success counts without calling them evidence of learning until the curve and the matched eval both say so. No change to `--action_steps`.
 
-`canonical_observation` maps cameras through `camera_name_mapping` (default `agentview_image` to `image`, `robot0_eye_in_hand_image` to `image2`) and builds an 8-vector state: end-effector position (3), axis-angle (3), gripper qpos (2). `LiberoProcessorStep` (`src/lerobot/processor/env_processor.py`) does the same conversion on batched tensors and flips images on height and width. `tests/sim/integrations/test_libero.py` checks the numpy adapter against `LiberoProcessorStep` and checks `conventions()` without starting MuJoCo.
+Hyperparameters: loading `configs/nominal_ppo_libero10.json` reproduces the argv of the learning run. A file with `action_steps` other than 1 is rejected. Two launches with the same file and seed write the same `ppo_run_v1` record.
 
-Action space in this file is `Box(-1, 1, shape=(7,))` (`ACTION_DIM = 7`). Suite horizons are `TASK_SUITE_MAX_STEPS`: spatial and object 280, goal 300, `libero_10` 520, `libero_90` 400. `LiberoEnvConfig` defaults to `observation_height = observation_width = 360` and `fps = 20`.
+### Conflicts
 
-`tests/sim/integrations/test_libero.py` never constructs `OffScreenRenderEnv`. Creating a real LIBERO env is implemented and not covered by that test.
+A is the only workstream that edits `src/ppo_step.py` and `src/train_flow_rl.py` during this slice. B and C stay out of those files. The learning run will later call B's hook with `perturbation=None`; that call is a one-line follow-up after B has merged, not part of the first diagnostics commit.
 
-### Evaluation rollout
+## Workstream B: Perturbation framework
 
-`rollout` in `src/lerobot/scripts/lerobot_eval.py`:
+Pixel and initial-state perturbations on the current LIBERO installation. No fork of LIBERO, and no edit of the PPO objective.
 
-1. `policy.reset()`, which clears SmolVLA's action deque (`SmolVLAPolicy.reset`).
-2. `env.reset`.
-3. Each step: `prepare_canonical_observation` when the vector env sets `canonical_observations`, else `preprocess_observation`.
-4. Copies `task_description` into `observation["task"]` (`LiberoEnv.task_description` is `task.language`).
-5. Runs `env_preprocessor`, then the policy preprocessor (rename, normalize, tokenize).
-6. Under `torch.inference_mode()`, calls `policy.select_action`. SmolVLA refills a chunk only when the deque is empty (`_check_get_actions_condition`) and pops one action. RTC is rejected inside `select_action`.
-7. Postprocesses, steps the vector env, and records `reward`, `success` from `info["final_info"]["is_success"]`, and `done`.
+### Features
 
-`eval_policy` aggregates `pc_success` and `pc_success_ci95`. `return_observations` defaults to false. The returned dict has no log-probability and no value.
-
-`select_action` is decorated with `@torch.no_grad()`. A PPO update cannot backpropagate through the action that this method returns.
-
-### Where a PPO loop would have to be built
-
-| Stage | In this tree | Status |
-| --- | --- | --- |
-| LIBERO construction | `LiberoEnv`, `env_fns`, `LiberoEnvConfig` | Implemented, not exercised here (no simulator in the unit test) |
-| Language-conditioned action | `select_action` → `sample_actions` | Implemented, not exercised here |
-| Rollout traces of reward and success | `lerobot_eval.rollout` | Implemented, not exercised here. Not a training buffer |
-| Online transition transport | `act_with_policy`, `ReplayBuffer` | Implemented for SAC on `RobotEnv`. Requires modification to target LIBERO, and the policy type still does not match |
-| Reward used for learning | Inner LIBERO `step` return | Not defined in this repository. Success flag is separate |
-| Advantage / GAE | — | Requires new implementation |
-| PPO parameter update | — | Requires new implementation |
-
-## 3. Pretrained checkpoints
-
-Hub configs were read for this plan. Weights were not loaded into `SmolVLAPolicy`.
-
-`SmolVLMWithExpertModel.__init__` (`src/lerobot/policies/smolvla/smolvlm_with_expert.py`), when `load_vlm_weights` is true, downloads `HuggingFaceTB/SmolVLM2-500M-Video-Instruct` in bfloat16 and always downloads its processor. Checkpoint `model.safetensors` is applied afterward by `PreTrainedPolicy.from_pretrained`. Construction therefore needs that VLM repo even when the policy repo already stores a fine-tuned state dict. The class then truncates the text stack to `num_vlm_layers` (16 in `SmolVLAConfig`).
-
-| Hub repo | Hub sha prefix | Named by | State | Cameras | Action | `train_expert_only` / `freeze_vision_encoder` |
-| --- | --- | --- | --- | --- | --- | --- |
-| `lerobot/smolvla_base` | `5e8d12a6e297` | Tests such as `tests/test_yaml_policy_path.py` | `[6]` | `camera1`, `camera2`, `camera3`, each `[3, 256, 256]` | `[6]` | true / true |
-| `lerobot/smolvla_libero` | `a24f1f380461` | `benchmarks/benchmarks.yaml` `libero.revision`; `scripts/ci/benchmark_matrix.py` default `lerobot/smolvla_{name}` | `[8]` | `camera1`, `camera2` | `[7]` | false / false |
-| `lerobot/smolvla_libero_plus` | `bb424c8a430f` | `benchmarks/benchmarks.yaml` `libero_plus.revision` | `[8]` | `camera1`, `camera2`, plus `empty_camera_0` and `empty_camera_1` | `[7]` | false / false |
-
-`benchmarks/benchmarks.yaml` maps LIBERO's `observation.images.image` and `observation.images.image2` to `camera1` and `camera2`. `lerobot_eval.eval_main` passes `cfg.rename_map` into the preprocessor. Without that map, `rollout/context.py` raises `Visual feature mismatch` when camera names differ.
-
-`lerobot/smolvla_base` is not a LIBERO policy: 6-D state, 6-D action, three cameras. `LiberoEnv` steps a 7-vector. The nominal and perturbation-aware runs should load `lerobot/smolvla_libero`.
-
-`lerobot/smolvla_libero_plus` sets `empty_cameras` to 2. `SmolVLAConfig.validate_features` inserts empty visual slots, and `prepare_images` masks cameras that are absent up to `empty_cameras`. The two real LIBERO views still need the rename map. The saved config leaves the VLM trainable.
-
-`resize_imgs_with_padding` is `[512, 512]` on all three checkpoints, so a 360×360 LIBERO frame is resized inside `prepare_images`. That removes a hard shape conflict. It does not make a 360×360 render the same distribution as the 256×256 features stored in the checkpoint config.
-
-## 4. Where perturbations can enter
-
-Nothing in `LiberoEnv` takes a color, lighting, texture, dynamics, or object-offset argument.
-
-### Visual, on the image the policy sees
-
-`ImageTransformsConfig` (`src/lerobot/transforms/transforms.py`) defaults to `enable=False`. When enabled, the preset set is brightness, contrast, saturation, hue, sharpness, and a small affine. `ImageAugmentationProcessorStep` (`src/lerobot/processor/image_augmentation_processor.py`) applies `BatchedImageTransforms` to `observation.images.*` on a training batch. `lerobot-train` can place that step before the policy preprocessor. `rollout` does not.
-
-That path changes pixels after rendering. It does not change LIBERO lighting or textures, and the affine is a 2D image warp, not a camera move in MuJoCo. Wiring it into `rollout` is a modification of the eval loop, or a new wrapper around the observation dict before `preprocessor`. A training-only augmentation must not be reused unchanged as an evaluation perturbation: `enable` is a training flag, and the draws are random unless a generator seed is set on `ImageAugmentationProcessorStep`.
-
-### Spatial, initial object position
-
-`LiberoEnv.reset` already cycles stored MuJoCo states from `get_task_init_states`. Those states are benchmark initial conditions, not a knob for "move the object by N centimeters." Offsetting an object requires either a new state edit after `set_init_state`, or a LIBERO-plus task whose layout is already baked into the BDDL and init file. The stored-state cycle is implemented. A controlled position shift is new.
-
-### Physical
-
-No mass, friction, or gravity field exists on `LiberoEnv` or `LiberoEnvConfig`. A physical perturbation is new, and it has to happen on the inner simulator after `_ensure_env`.
-
-### Seen versus unseen
-
-No split of perturbation parameters exists. `tests/robustness/` currently only checks that `perturbations`, `rollouts`, `config`, and `evaluation` directories exist (`tests/robustness/test_suite_layout.py`).
-
-## 5. LIBERO-Plus
-
-`LiberoPlusEnvConfig` subclasses `LiberoEnvConfig`, registers `"libero_plus"`, and sets `is_libero_plus=True`. Its docstring lists seven external dimensions: camera, layout, robot initial state, language, light, background, and sensor noise. The Python in this repo does not generate those dimensions.
-
-`src/lerobot/sim/integrations/libero_plus.py` only calls LIBERO's `env_fns` with `is_libero_plus=True`. `get_task_init_states` then:
-
-- loads `libero_newobj` files when the name contains `_add_` or `_level`, and reshapes them to `(1, -1)`;
-- strips `_(language|view|light)_…` and `_(table|tb)_<digits>` from other filenames and loads the base `.pruned_init`.
-
-So a view, light, or language variant reuses the base init file. The scene difference has to come from the external LIBERO-plus package's task definition, not from this function. `LiberoPlusEnvConfig` says that package is a git fork on `PYTHONPATH`, installed from the `libero_plus_native` stage of `docker/Dockerfile.sim`, and is not a `pyproject.toml` extra. `libero` is an extra (`hf-libero`, Linux only). `libero_plus` is not.
-
-`benchmarks/benchmarks.yaml` already records a smoke entry: task `libero_spatial`, policy revision `bb424c8a430f`, and the same camera rename as LIBERO. The runner is `scripts/ci/benchmark_matrix.py` plus the archived workflow `.github/upstream-workflows/benchmark_run.yml`. That workflow is not executed by this project's CI. Reuse for the course is the in-tree env class, the rename map, and the pinned checkpoint. Reuse is not "turn the archived benchmark workflow back on."
-
-`smolvla_libero_plus` is a policy trained under that benchmark. Evaluating it is a comparison point. It is not a substitute for training our own PPO policies.
-
-## 6. Dependencies, memory, and a 12–24 GB GPU
-
-Required to load SmolVLA and step LIBERO, from the code and `pyproject.toml`:
-
-- Python `>=3.12`.
-- Extra `smolvla`: `transformers` in the pinned range, `num2words`, and `accelerate`.
-- Extra `libero`: `hf-libero` on Linux, `scipy`, and the `dataset` extra (video stack). LIBERO-Plus is additional and outside that extra.
-- `MUJOCO_GL=egl` is the headless setting documented for this env; rendering is MuJoCo, not the policy GPU.
-- First construction with `load_vlm_weights=True` downloads `HuggingFaceTB/SmolVLM2-500M-Video-Instruct` and its processor, then the policy `model.safetensors`.
-
-This analysis did not measure VRAM. The structure that dominates memory is visible in the config:
-
-- VLM is the SmolVLM2-500M class, cut to 16 text layers, plus an action expert at `expert_width_multiplier=0.75`.
-- Two images are resized to 512×512 (`prepare_images`).
-- Inference denoises a chunk of 50 for `num_steps=10`, with `use_cache=True` so the prefix KV is computed once per chunk.
-- `select_action` holds no gradient.
-- `lerobot/smolvla_libero` sets `train_expert_only=False` and `freeze_vision_encoder=False`. A backward pass through `forward` or through the 10 denoising steps therefore includes the VLM unless those flags are changed after load.
-
-Inference of one LIBERO environment (`eval.batch_size=1`, `torch.inference_mode`) is the feasible first use of a 12 GB or 24 GB GPU. It was not timed here.
-
-A PPO update that backpropagates through the unfrozen 500M VLM and a 50-step chunk at 512×512 should not be planned for 12 GB on the archived 0.7.1 tree. That is not the trainer in this checkout. The adopted trainer stores sampling trajectories on the host and exposes explicit freeze regimes in `src/model_setup.py`. Its 12 GB claim is still unmeasured.
-
-Other bottlenecks that are in the code, independent of that measurement:
-
-- `rollout` runs every sub-environment until the slowest one finishes, and LIBERO horizons are 280–520 control steps.
-- `return_observations=True` keeps every frame. Leave it false in the eval path. A PPO buffer should store what the update needs, not the whole rendered episode twice.
-- `LiberoEnvConfig` at 360×360 is larger than the 256×256 feature shape stored on the LIBERO checkpoint. Resize still happens, but the render cost is higher.
-- Several vector environments multiply MuJoCo processes. Start at one environment.
-- `ImageTransformsConfig` comments already warn that unbounded GPU augmentations at 480×640 hold multiple float copies of the batch. Perturbation code should apply one seeded transform to the rendered frame, not the training stack's `max_num_transforms=3` random subset, until memory is measured.
-
-## 7. External trainers, and the starting point
-
-The reading below was done on clones outside the LeRobot checkout, before this branch was created. This branch now *is* the `smolvla_flow_rl` history at `c161af2100610cf9f411bce23ad57180eb771d44`, plus the migration commit. FlowVLA-RL and RLinf were not merged in. Claims below are from those files, not from READMEs alone, except where a README is quoted as a claim the code does not support.
-
-### 7.1 What each repository actually implements
-
-| Question | `mturan33/smolvla_flow_rl` | `BlackMirean/FlowVLA-RL` | `RLinf/RLinf` |
-| --- | --- | --- | --- |
-| Algorithm | PPO on a flow-matching SmolVLA policy | GRPO, critic-free, on SmolVLA | PPO and flow-SDE sampling for several VLAs. A search of `rlinf/` finds no `smolvla` symbol. |
-| License | Apache-2.0. `NOTICE` names RLinf commit `832db3f5c7aa6c61d72f20aaf43b7ce0f4ad2b03` and LeRobot 0.4.4 as upstreams of `src/flow_sde.py`, `src/value_head.py`, `src/ppo_step.py`, and `src/action_model.py`. | MIT, copyright Teng Zhu, 2026. | Apache-2.0. |
-| LeRobot pin | `requirements.txt`: `lerobot[smolvla]>=0.4.4,<0.5` and `hf-libero>=0.1.3,<0.2`. | `requirements-pinned.md`: LeRobot **v0.6.0**, and the README says HEAD is incompatible. | Not a LeRobot tree. Embodiment code vendors its own policies. |
-| Checkpoint | Default warning path and `scripts/download_base_policy.py` use `HuggingFaceVLA/smolvla_libero`. Hub `config.json` for that id declares `observation.images.image` and `observation.images.image2`, state, and action shape `[7]`. | Pins `lerobot/smolvla_base` revision `c83c3163b8ca9b7e67c509fffd9121e66cb96205` and trains its own SFT. The report compares against `lerobot/smolvla_libero`. | OpenPI, GR00T, LingBot, and related configs. Not the LIBERO SmolVLA checkpoint. |
-| Stochastic sampling | `src/flow_sde.py` `sde_sample`: one randomly chosen integration step is Gaussian (`flow_sde`); the rest are the constant-step Euler update (`flow_ode`). Eval sets every step deterministic. | `src/flowvla_rl/sde.py` and `smolvla_sde.py`: Gaussian transition at denoising steps, with `gaussian_log_prob`. | `rlinf/models/embodiment/openpi/sampling/rl_sampler.py` implements `flow_ode`, `flow_sde`, `flow_cps`, and `flow_noise`. |
-| Log-probability | `get_logprob_norm` is an elementwise Gaussian density. `sde_sample` slices to `[:, :, :action_chunk, :action_env_dim]` and keeps only the stochastic step (`denoise_inds`). `recompute_logprob_value` rescores the stored chain at that same index. | `SmolVLATrajectory.log_probs` sums element log-densities under a mask. `recompute_log_probs` rescores a stored trajectory. | The OpenPI sampler returns a transition log-density for the chosen noise method. |
-| Rollout buffer | `src/rollout.py` `collect_rollout` stores, per decision, `env_obs`, `chains`, `denoise_inds`, `prev_logprobs`, `values`, rewards, dones, and a bootstrap value. Chains stay on CPU. | Group rollouts of 4 episodes from one initial scene (`libero_rollout.py`). | Ray workers and per-policy rollout workers. A framework, not a single buffer class we can lift. |
-| Executed horizon | `ppo_step_stored` sums log-probabilities over `[:, :n_action_steps, :action_env_dim]` only. `collect_rollout` executes `n_action_steps` actions from one plan and folds reward and done with a max, so the stored row stays one per decision. `src/horizon_gate.py` refuses a run whose training horizon and eval horizon disagree. | Chunk masking is in `SmolVLATrajectory.masked_log_probs`. Suite step caps are hardcoded (object/spatial 280, goal 300). | OpenPI configs (the pin cited by `smolvla_flow_rl`) use a LIBERO horizon of 480 for both train and eval. |
-| Critic | `src/value_head.py` `ValueHead`: MLP on the features entering `action_out_proj`, captured by a forward pre-hook. Optional LayerNorm and PopArt buffers. The head is a separate module. | None. Advantages are the group mean (and optional group standard deviation) of episode returns. | `rlinf/models/embodiment/modules/value_head.py` is the file `smolvla_flow_rl` says it adapted. Other value models exist for other policies. |
-| Reward and GAE | `terminal_success` in `src/env_libero.py` is 1 on success, else 0. No shaping. `src/gae.py` `compute_gae` is the standard δ recursion with `1 - done` cutting the bootstrap, plus a caller-supplied bootstrap for a segment that ends mid-episode. Advantages are standardized over the pooled batch with population std. | Binary success, one scalar per episode, then group-relative advantages. No GAE. | RLinf's own advantage utilities. Not inspected line by line beyond the OpenPI loss names cited below. |
-| PPO objective | `src/reference_ops.py` `pg_loss_reference`: clipped surrogate plus dual clip at `clip_ratio_c=3`. Value loss is clipped Huber (`value_clip=0.2`, `huber_delta=10`). `ppo_step_stored` adds `value_coef * v_loss` and an optional KL to a frozen reference. No entropy term, because the noise scale is not a parameter. Gradient accumulation divides the loss by the number of micro-batches. Non-finite steps are skipped. | `grpo_loss` in `src/flowvla_rl/grpo.py` weights the log-probability by the group advantage. It is not the clipped PPO surrogate. | `rlinf/algorithms/losses.py` `compute_ppo_actor_loss` is the reference `smolvla_flow_rl` quotes. |
-| Trainable pieces | `src/model_setup.py` regimes: `expert_full_vlm_lora` (recommended in the README: full-rank action expert, LoRA on the language backbone, action-head projections open), `full`, `lora`, `frozen`. The README's own parameter counts are 96.70M (`full`) and larger for the LoRA-on-VLM regime. `frozen` and `lora` do not train the action-head projections. | Trains the action expert. The frozen SFT policy is the KL reference. | Per-policy configs. Adopting this means taking the framework's worker and config system. |
-| Memory | The README states a 12 GB RTX 5070 Ti laptop run in bf16. This analysis did not reproduce that measurement. The code that makes the claim plausible is real: bf16 autocast in `collect_rollout`, prefix KV computed once per chunk, and chains stored on CPU. | README states peak 20.4 GiB on a 32 GB RTX 5090, and that rollouts are CPU-bound. Not remeasured here. | Distributed workers. Not a 12 GB single-process recipe. |
-| Evaluation | `src/evaluate.py` scores deterministic (`mode="eval"`) episodes and can reread one log at several budgets that do not exceed the horizon. `eval_cli.py` checks that the eval flags match the recorded training run. | `configs/eval_protocol.md` and `REPORT.md`: ODE sampling, 20 episodes per task, eval seed 1000. | Example YAMLs per embodiment. |
-| Tests and results | The clone contains `tests/test_invariants.py` only. `reference_ops.py` names `tests/test_reference_parity.py`, which is not in this tree. The README says no success rates are published. Do not cite a number from this repository. | `tests/` exists and the README links a passing Actions badge. Reported LIBERO-Object change 58.5% to 64.8% is a README/REPORT claim. The loss code is GRPO, and the report itself says the 300-update budget was chosen using a seed that is inside the mean. Treat those percentages as their result under their protocol, not as a number this project has reproduced. | Large test tree for the framework. No SmolVLA LIBERO number to adopt. |
-
-Two facts ruled out porting this trainer into the archived LeRobot 0.7.1 tree:
-
-1. `src/env_libero.py` imports `from lerobot.envs.configs import LiberoEnv` and `from lerobot.envs.libero import TASK_SUITE_MAX_STEPS, _make_env_fns`. On `archive/lerobot-0.7.1` the class is `LiberoEnvConfig` in `lerobot.envs.configs`, and the factory is `lerobot.sim.integrations.libero._make_env_fns`. FlowVLA-RL's `libero_rollout.py` imports `from lerobot.envs.libero import LiberoEnv`, the same missing module.
-2. `src/action_model.py` calls `vlm_with_expert.forward(..., fill_kv_cache=True)`. On `archive/lerobot-0.7.1`, `SmolVLMWithExpertModel.forward` does not take `fill_kv_cache`. That call matches LeRobot 0.4.4, which is the pin in `requirements.txt`, and it does not match 0.7.1.
-
-`HuggingFaceVLA/smolvla_libero` and `lerobot/smolvla_libero` are different checkpoints. Both have action shape `[7]`. The first declares `observation.images.image` and `observation.images.image2`, which is what `REQUIRED_IMAGE_KEYS` in `src/action_model.py` demands. The second declares `camera1` and `camera2`, which is what `benchmarks/benchmarks.yaml` on `archive/lerobot-0.7.1` renames. This trainer refuses the second id.
-
-### 7.2 Decision
-
-**Option C is adopted.** This branch is the `smolvla_flow_rl` history. It is not a vendor of those files inside LeRobot 0.7.1, and it is not a dependency of that environment.
-
-- **A, integrate into LeRobot 0.7.1**, was a port. The PPO math does not import LeRobot, but `action_model.py` and `env_libero.py` call LeRobot 0.4.4 private APIs that 0.7.1 renamed or removed.
-- **B, external dependency**, cannot share an environment with LeRobot 0.7.1. The pin is `lerobot<0.5`.
-- **C** keeps the upstream sampling, executed-chunk mask, GAE, and PPO step. Robustness work, when it starts, goes on `adapt_observation` / `collect_rollout`. `NOTICE` and the RLinf and LeRobot copyright lines stay with those files. They were not rewritten in the migration.
-
-What this adoption does not buy:
-
-- No published success rate. The first training run is still an experiment. It has not been started.
-- No visual or spatial perturbation API. Seen/unseen robustness is still new code.
-- No LIBERO-Plus. `LiberoPlusEnv` exists only on `archive/lerobot-0.7.1`.
-- The upstream README's 12 GB claim was not measured here.
-- The checkpoint id is `HuggingFaceVLA/smolvla_libero` (keys `image` / `image2`). `lerobot/smolvla_libero` is a different Hub repo and is refused by `src/action_model.py`.
-
-FlowVLA-RL is GRPO, not PPO, and pins LeRobot 0.6.0. RLinf is the mathematical upstream named in `NOTICE` and does not contain a SmolVLA trainer. Neither was merged.
-
-### 7.3 Branches
-
-Branch A is the migration commit on `flow-rl`. Do not open B–F until a later task asks for them. None of them edits the PPO files to satisfy CI. CPU tests that land later must not import MuJoCo or a checkpoint. The active CI runs `scripts/check_syntax.py` and `scripts/check_import_closure.py` only. `tests/test_invariants.py` needs LeRobot and LIBERO and is outside that job.
-
-### Branch A — migration onto `flow-rl` (done in the migration commit)
-
-`flow-rl` is `smolvla_flow_rl` `main` at `c161af2100610cf9f411bce23ad57180eb771d44`, tagged `flow-rl-baseline`, plus documentation and CI. `NOTICE` is the upstream file. `requirements.txt` still pins `lerobot[smolvla]>=0.4.4,<0.5`. The LeRobot 0.7.1 history is `archive/lerobot-0.7.1`, not a parent of this branch.
-
-Acceptance for this commit: `git rev-parse flow-rl-baseline^{}` equals `upstream/main` at the time of the tag; `git diff flow-rl-baseline -- src NOTICE LICENSE requirements.txt environment.yml` is empty; `archive/lerobot-0.7.1` still points at `462e4571e1bf7a37ef15b4594746c6600e8a3621`.
-
-### Branch B — `feat/checkpoint-and-horizon`
-
-Depends on A.
-
-Responsibilities: pin `HuggingFaceVLA/smolvla_libero` and the suite horizon in one config. Training, in-training eval, and the final eval read that horizon through `horizon_gate.assert_single_horizon`. Document that `lerobot/smolvla_libero` is a different checkpoint and is not loaded by this trainer.
-
-Acceptance: a unit test of the gate rejects disagreeing horizons; a dry import of the harness check rejects a config whose image keys are `camera1`/`camera2`. No GPU.
-
-### Branch C — `feat/nominal-ppo-smoke`
-
-Depends on B. First GPU run. Not CI.
-
-Responsibilities: one task, one environment, bf16, the README's `expert_full_vlm_lora` regime or the `frozen` regime if memory fails, a short segment, one PPO update via `ppo_step_stored`. Record peak GPU memory, whether the step was skipped as non-finite, and that eval sampling uses `mode="eval"`.
-
-Acceptance: the process finishes one update; the log contains `pg_loss`, `v_loss`, `clip_frac`, and `step_skipped`; peak memory is written into the run notes. No success-rate claim from a handful of steps.
-
-### Branch D — `feat/perturbation-spec`
-
-Depends on A, which is done. Not started. Do not put this under `src/lerobot/robustness/`; that path exists only on the archived branch.
-
-Responsibilities: seen and unseen specs for color jitter and for an initial-position delta. Identity spec is a no-op. The position delta is data only.
-
-Acceptance: a fixed seed reproduces the jittered tensor; a spec cannot be both seen and unseen; the position applicator is not imported from any LIBERO module. CPU only.
-
-### Branch E — `feat/perturbation-in-rollout`
-
-Depends on A, C, and D.
-
-Responsibilities: apply the seen visual spec inside the adopted `collect_rollout` path, after the simulator returns the frame and before `adapt_observation`. Do not apply the unseen spec during training. Leave `terminal_success` and `compute_gae` unchanged so the reward definition stays the one in their `env_libero.py`.
-
-Acceptance: a fake observation dict changes under the seen spec and does not change under the unseen spec; the stored `chains` row still lines up with one decision, not with each executed action.
-
-### Branch F — `feat/robustness-eval`
-
-Depends on B and E.
-
-Responsibilities: three eval passes on the same checkpoint, all deterministic: nominal, seen, unseen. Same horizon as training. Report success counts and the number of episodes. Do not compare against a number from FlowVLA-RL or from `smolvla_flow_rl`, because the first has no PPO and the second publishes none.
-
-Acceptance: the eval log records the checkpoint id, horizon, `n_action_steps`, and which spec was applied. A budget larger than the horizon is rejected by their existing `parse_budgets`.
-
-### Dependencies that stay pinned
-
-| Item | Pin |
+| Branch | Delivers |
 | --- | --- |
-| Training code | `flow-rl-baseline` `c161af2100610cf9f411bce23ad57180eb771d44`, Apache-2.0 plus `NOTICE` |
-| LeRobot | `lerobot[smolvla]>=0.4.4,<0.5` in the conda env `smolvla-flow-rl`, not in the env `lerobot` |
-| LIBERO package | `hf-libero>=0.1.3,<0.2` |
-| Policy weights | `HuggingFaceVLA/smolvla_libero` |
-| Archived eval path | `lerobot/smolvla_libero` and LIBERO-Plus remain on `archive/lerobot-0.7.1` only |
+| `feature/b-perturbation-spec` | `perturbation_v1` load, save, and validation |
+| `feature/b-visual` | Brightness, contrast, and Gaussian observation noise |
+| `feature/b-spatial` | A bounded shift of the target object's initial position |
+| `feature/b-sampling` | Draws of spec parameters from a `SeedSequence` keyed by spec name, severity, episode id, and split |
+| `feature/b-hooks` | The identity-preserving call in `collect_rollout` and `evaluate` |
 
-### 7.4 Default branch, not done here
+The spec branch lands first. Visual and spatial then proceed in parallel. Sampling lands after the spec schema, and it can land before the image and pose functions. The hook branch is last: it calls the functions the other four branches exported.
 
-`origin/main` stays the LeRobot 0.7.1 history. Making `flow-rl` the default branch is a GitHub setting: Settings → General → Default branch → `flow-rl`. That does not require a force-push, and it leaves `main` in place. `archive/lerobot-0.7.1` is the same commit as `main`, so the archive remains if an admin later renames `main`.
+### Files
 
-Renaming `flow-rl` to `main` while `main` still exists, or deleting `main`, rewrites or removes the existing branch. That needs an explicit team decision. It was not done. Do not force-push `main` to this history.
+New package `src/perturbations/`:
 
-## 8. Superseded plan
+- `spec.py` for `perturbation_v1`
+- `visual.py` for brightness, contrast, and noise
+- `spatial.py` for the initial-position shift
+- `sample.py` for the seeded draw
 
-The previous branch list (experiment config, visual perturbations, spatial interface, rollout record, nominal eval, a from-scratch PPO update, a LIBERO loop, perturbation-aware PPO, a report, and LIBERO-Plus eval, all under `src/lerobot/robustness/` on `archive/lerobot-0.7.1`) is withdrawn. It assumed the policy gradient had to be written on that tree. LIBERO-Plus and the spatial applicator remain future work on this trainer, not branches on `LiberoEnv` in the archive.
+Modify:
 
-## 9. Parallel work and conflicts
+- `src/rollout.py` and `src/evaluate.py`, in `feature/b-hooks` only, to take `perturbation=None`.
+- `src/env_libero.py`, in the spatial branch, to expose one worker-side reset callback. The callback runs after `set_init_state` and before the existing settle steps. The default callback is a no-op, so current resets stay valid.
 
-Do not open research branches in this migration. After it, B and D can proceed together. C is the first GPU job and should be the only edit to `src/train_flow_rl.py` and `src/model_setup.py` in that task. E edits `src/rollout.py` and should not start while C is changing that loop. F waits for E.
+Visual functions operate on the float CHW image in `[0, 1]` after `LiberoProcessorStep` and before the policy preprocessor resizes to 512. Both cameras go through the same spec. The function returns a new tensor and does not write into the simulator.
 
-Do not edit `src/flow_sde.py`, `src/gae.py`, `src/ppo_step.py`, or `src/reference_ops.py` to add perturbations or to satisfy a formatter. Perturbations enter only at the observation, before the policy preprocessor. `lerobot/smolvla_base` is the wrong initialization: `scripts/download_base_policy.py` says its cameras and widths do not match this harness.
+### Acceptance and tests
 
-The archived branch still contains `modeling_smolvla.py` and the SAC factory. Do not register `"ppo"` there, and do not merge that branch into `flow-rl`.
+Spec: a severity-0 spec of every family compares equal to the identity. A document that sets `split` to both `seen` and `unseen` is rejected. Round-trip JSON preserves `params`.
 
-## 10. Suggested next assignment
+Visual: brightness and contrast match a closed-form scale on a 2×2 image. Noise with a fixed seed is bitwise identical across two calls and changes when the episode id changes. Values stay inside `[0, 1]`.
 
-Not this commit. The next research task is branch B (checkpoint id and a single horizon), then branch C (one PPO update, with peak memory written down). Branch C is the measurement the 12 GB claim still needs. Do not treat that run as a success rate.
+Spatial: a fake object pose moves by the requested delta and by nothing when severity is 0. The test does not import LIBERO. The delta is in meters, clipped to a declared bound, and stored on the spec.
+
+Sampling: the same `(name, severity, episode, split)` returns the same parameter dict. A seen draw and an unseen draw at the same severity differ.
+
+Hooks: with `perturbation=None`, a fake observation dict is unchanged and `collect_rollout`'s stored row is still one decision. With a brightness spec, only the image tensors change. `terminal_success` and `compute_gae` are not called by these tests and are not edited.
+
+### Conflicts
+
+B is the only workstream that adds `src/perturbations/` and the only one that edits `src/rollout.py` in this slice. `src/evaluate.py` is also edited by C. C merges the seed arguments first. B adds `perturbation=None` beside those arguments and does not change the seed defaults.
+
+## Workstream C: Robustness evaluation
+
+Same checkpoints, same initial states, same policy noise. The suite of perturbations comes from B's schema. The paired comparison can be built against the existing `step_000020.pt` before any new training run.
+
+### Features
+
+| Branch | Delivers |
+| --- | --- |
+| `feature/c-reproducible-eval` | Separate environment and policy seeds. Initial flow noise is standard normal and independent of batch width and row order |
+| `feature/c-scenarios` | `eval_scenario_v1` files for LIBERO-Long, 10 episodes, initial states 0–9, `action_steps` 1, horizon 520 |
+| `feature/c-robustness-suites` | Nominal, seen, unseen, and a severity ladder, each pointing at one scenario plus one spec |
+| `feature/c-curves` | Per-task success and a success-versus-severity table from a finished scenario log |
+| `feature/c-paired-compare` | Two checkpoints, one scenario, one noise sequence, per-task counts for each |
+
+Seeds land first and do not wait on A or B. Scenarios wait on the seed arguments. Suites wait on B's spec schema and on scenarios. Curves and the paired comparison wait on a scenario log. The paired script can target the pretrained initialization and `runs/nominal_ppo/libero10_task0/step_000020.pt` once the scenario format exists. That checkpoint is gitignored. The script records its path and does not copy it into git.
+
+### Files
+
+Modify:
+
+- `src/evaluate.py` and `src/eval_cli.py`, seed arguments only, on `feature/c-reproducible-eval`.
+- `scripts/matched_checkpoint_eval.py`, so the paired comparison calls `evaluate` with the scenario's seeds and episode ids.
+
+New:
+
+- `src/eval_noise.py`
+- `src/eval_scenario.py`
+- `tests/test_eval_noise.py`
+- `tests/test_eval_scenario.py`
+- `tests/test_robustness_curves.py`
+- `configs/scenarios/libero10_nominal.json` and the seen, unseen, and severity files
+- `scripts/robustness_curves.py`
+- `docs/ROBUSTNESS_EVAL.md`
+
+Do not modify `src/ppo_step.py`, `src/flow_sde.py`, or the default of `--action_steps`.
+
+### Acceptance and tests
+
+Seeds: the same episode id produces the same reset seed and the same float32 noise row when the batch is reordered or resized. A different decision index changes the noise. The Gaussian mean and standard deviation stay 0 and 1. `evaluate` without the new arguments keeps the historical reset. The Euler step is untouched. A test may call `sde_sample` with a constant velocity. It does not claim that a batched bfloat16 network forward is bitwise identical across batch sizes.
+
+Scenarios: a file with `action_steps` other than 1, a horizon other than 520 for `libero_10`, or an episode count below 10 is rejected by the loader used for reported runs. The nominal file has `perturbation: null`.
+
+Suites: seen and unseen files differ in `split` and in at least one parameter. The severity ladder is the same family at severities 0, 1, 2, and 3. Severity 0 matches the nominal spec.
+
+Curves: a synthetic per-task log becomes a table of successes over attempts at each severity. The script does not fill missing severities with a guessed rate.
+
+Paired comparison: both checkpoints receive the same scenario object. The report has one row per task for each checkpoint and states the episode count. Eight episodes are not a reported comparison under this contract. Ten per task is the minimum.
+
+### Conflicts
+
+C owns `src/eval_noise.py`, `src/eval_scenario.py`, and `configs/scenarios/`. It touches `src/evaluate.py` before B. It does not touch `src/train_flow_rl.py` or `src/ppo_step.py`. `scripts/matched_checkpoint_eval.py` is C's file for this slice. A and B leave it alone.
+
+## LIBERO-Plus
+
+[LIBERO-Plus](https://github.com/sylvestf/LIBERO-plus) (arXiv:2510.13626) defines seven perturbation dimensions: object layout, camera viewpoint, robot initial state, language, light, background texture, and sensor noise, with five severity levels. The current LeRobot documentation installs it by cloning that repository and uninstalling `hf-libero`, so `import libero` resolves to the fork. The same page evaluates it with `--env.type=libero_plus` and `lerobot-eval`.
+
+This environment is LeRobot 0.4.4 and `hf-libero` 0.1.5. The trainer imports `lerobot.envs.libero._make_env_fns` and `LiberoEnv` from that pin. Replacing `hf-libero` would remove the simulator the baseline runs used. `libero_plus` is not an environment type in the installed 0.4.4 package, and the fork is not a `requirements.txt` extra.
+
+The reuse that stays compatible is the vocabulary. Spec names may be `light`, `sensor_noise`, and `layout`, mapped onto brightness and contrast, observation noise, and the initial object shift this plan actually implements. Camera, robot initial state, language rewrites, and background textures need the fork's BDDL and assets. They are out of this slice.
+
+A separate conda environment may install the fork later for a comparison study. That environment is not `smolvla-flow-rl`, and its results are not numbers from this trainer until a task says they are.
+
+## Dependency order
+
+```text
+flow-rl (3c357d62)
+├── A  diagnostics ──► reward analysis (synthetic, parallel)
+│                  └─► nominal learning run ──► hyperparameter file
+├── B  spec ──► visual ──┐
+│         └──► spatial ──┼──► sampling (after spec) ──► hooks
+└── C  seeds ──► scenarios ──► suites (after B spec) ──► curves
+                            └─► paired comparison
+```
+
+A's learning run, B's hooks, and C's suites are the three merges that must be sequenced. Everything to their left can be reviewed in parallel.
+
+Perturbation-aware PPO is a later branch. It depends on A's diagnostics being on `flow-rl` and on B's hook accepting a seen spec during `collect_rollout` while evaluation still applies seen and unseen. It is not started in this slice. It still does not change `src/gae.py` or the PPO loss.

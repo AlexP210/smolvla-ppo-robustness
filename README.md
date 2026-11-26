@@ -71,7 +71,7 @@ Perturbations are planned and are not implemented. The intended families are:
 - **Spatial.** Changes to the initial object position. Initial-position changes are a first priority.
 - **Physical.** Changes to dynamics or object properties. These are in scope after the appearance and initial-position perturbations.
 
-Each family is meant to be split later into perturbations used during training ("seen") and perturbations held out for testing ("unseen"). The specific parameter ranges are not fixed yet. When they are added, they belong on the observation path in `src/rollout.py` (`adapt_observation` / `collect_rollout`), not inside `src/flow_sde.py`, `src/gae.py`, or `src/ppo_step.py`.
+Each family is meant to be split later into perturbations used during training ("seen") and perturbations held out for testing ("unseen"). The development contract, including which files each workstream may edit, is [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md). Visual changes apply to the image after the LIBERO processor and before the policy resize. An initial-position change is a reset hook in the simulator worker. Neither change goes inside `src/flow_sde.py`, `src/gae.py`, or `src/ppo_step.py`.
 
 ## Evaluation
 
@@ -81,7 +81,7 @@ Evaluation of the three configurations is planned. The intended protocol is:
 - **Seen perturbations.** Success under perturbations that perturbation-aware training was allowed to use.
 - **Unseen perturbations.** Success under held-out perturbations.
 
-Reported quantities, once the robustness experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. The numbers recorded so far are the execution checks and the pretrained LIBERO-Long rates in the three reports linked above. They are not those robustness results. The upstream README does not report success rates either.
+Reported quantities, once the robustness experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. The numbers recorded so far are the execution checks and the pretrained LIBERO-Long rates in the three reports linked above. They are not those robustness results. The upstream README does not report success rates either. The evaluation workstream in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md) is the contract for nominal, seen, unseen, and severity-based runs.
 
 The upstream scoring entry point is `src/eval_cli.py`. It refuses a success rate until `src/completeness_gate.py` accepts the log, and it refuses a budget longer than the horizon that was actually run. `scripts/run_gates.sh` is the upstream mechanical check. It is not the robustness protocol above. On the `smolvla-flow-rl` environment it has been run, including the invariant file, and it passed. That pass is a software check. It is not a LIBERO result.
 
@@ -114,7 +114,7 @@ bash examples/single_task_contact.sh /path/to/base
 
 The contact script is the upstream setup check. It needs a CUDA GPU, bf16, a downloaded checkpoint, and LIBERO. That script itself has not been launched. The pilot in [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md) calls `src/train_flow_rl.py` directly, with the contact example's noise, learning rates, discount, and rollout length, and with the recommended `expert_full_vlm_lora` regime rather than the example's illustrative `full` regime. Training requires fourteen arguments with no defaults (`python src/train_flow_rl.py --help`). Evaluation is `python src/eval_cli.py --help`. For headless rendering the upstream README sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl`. On this machine, robosuite's default file log at `/tmp/robosuite.log` is owned by another account. The conda environment sets `FILE_LOGGING_LEVEL = None` so that handler is not opened. The workaround is local to the environment and is written up in the baseline report.
 
-There is no project command yet for perturbation generation or the robustness comparison.
+Perturbation generation and the robustness comparison are specified in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md) and are not implemented.
 
 ## Repository branches
 
@@ -157,11 +157,32 @@ These need dependencies or hardware this job does not install. None of them has 
 - [x] Pretrained baseline validation: native LeRobot 0.4.4 versus Flow RL on LIBERO-Long, including action parity and execution horizons ([docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md))
 - [x] One PPO update on one LIBERO task, with peak memory recorded
 - [x] A 20-update nominal pilot that collects sparse reward and does not establish learning
-- [ ] A matched evaluation large enough to say whether PPO changed success
-- [ ] Perturbation framework (seen and unseen)
-- [ ] Robustness evaluation (nominal, seen, unseen)
-- [ ] Nominal PPO post-training long enough to test a change in success
-- [ ] Perturbation-aware PPO post-training
+The remaining items are the three workstreams in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md). They can proceed in parallel. None of them is implemented.
+
+Workstream A, RL post-training:
+
+- [ ] PPO training diagnostics that do not change the loss
+- [ ] Reward and advantage analysis
+- [ ] Nominal PPO learning experiments
+- [ ] Hyperparameter selection and a reproducible training configuration
+
+Workstream B, perturbation framework:
+
+- [ ] Shared perturbation specifications
+- [ ] Visual perturbations: brightness, contrast, and observation noise
+- [ ] Spatial perturbations: initial object position
+- [ ] Reproducible perturbation sampling
+- [ ] One integration hook for training and evaluation
+
+Workstream C, robustness evaluation:
+
+- [ ] Reproducible environment and policy sampling
+- [ ] Fixed evaluation scenarios
+- [ ] Nominal, seen, unseen, and severity-based evaluation
+- [ ] Per-task metrics and robustness curves
+- [ ] Paired comparisons of a pretrained and a post-trained policy
+
+- [ ] Perturbation-aware PPO, after A and B have both landed
 - [ ] Generalization and failure analysis
 
 ## Repository Structure
@@ -182,7 +203,7 @@ These need dependencies or hardware this job does not install. None of them has 
 | `protocol/VERIFICATION_PROTOCOL.md` | Upstream verification rules |
 | `NOTICE`, `LICENSE`, `THIRD_PARTY_LICENSES/`, `CHANGES_FROM_UPSTREAM.md` | Apache-2.0, attribution, and the record of what was adapted |
 | `README_UPSTREAM.md` | Preserved upstream README |
-| `docs/PROJECT_PLAN.md` | Technical plan for this course project |
+| `docs/PROJECT_PLAN.md` | Contract for the three parallel workstreams |
 | `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
 | `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
 | `docs/PRETRAINED_BASELINE_VALIDATION.md` | Native LeRobot evaluation of the pretrained checkpoint, and the horizon comparison |
