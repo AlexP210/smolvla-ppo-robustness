@@ -157,7 +157,7 @@ These need dependencies or hardware this job does not install. None of them has 
 - [x] Pretrained baseline validation: native LeRobot 0.4.4 versus Flow RL on LIBERO-Long, including action parity and execution horizons ([docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md))
 - [x] One PPO update on one LIBERO task, with peak memory recorded
 - [x] A 20-update nominal pilot that collects sparse reward and does not establish learning
-The remaining items are the three workstreams in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md). They can proceed in parallel. None of them is implemented.
+The remaining items are the three workstreams in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md). They can proceed in parallel. PPO diagnostics and the separate evaluation seeds are implemented. The other items are not.
 
 Workstream A, RL post-training:
 
