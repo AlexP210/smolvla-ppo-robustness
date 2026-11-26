@@ -1,278 +1,169 @@
-# smolvla_flow_rl
+# Robustness of Vision-Language-Action Models through Reinforcement Learning Post-Training
 
-![demo](assets/demo.gif)
+This repository is a course research project on reinforcement-learning post-training for vision-language-action (VLA) policies. The training code is the history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl) (Mehmet Turan Yardimci). The upstream README is preserved, unmodified, in [README_UPSTREAM.md](./README_UPSTREAM.md). The tag `flow-rl-baseline` is that upstream commit, `c161af2100610cf9f411bce23ad57180eb771d44`, before the documentation and CI added for this project.
 
-Two LIBERO Long episodes from the author's own runs, side by side. It is footage, not a measurement: two
-episodes, chosen, with no repetition and no statistics behind either panel.
+The previous LeRobot 0.7.1 line is not in this branch. It is `archive/lerobot-0.7.1`. The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
 
-Full video: https://www.linkedin.com/posts/mehmetturanyardimci_robotics-reinforcementlearning-vla-ugcPost-7488179589240799232-7Gv6/
+No robustness experiment and no PPO training run has been executed in this project. Sections below separate what the upstream trainer already contains from work that is planned. A passing CI check is not evidence that training works.
 
-Online reinforcement learning fine tuning for a flow matching vision language action policy, on a single
-consumer GPU.
+## Project Title
 
-Project page: https://mturan33.github.io/smolvla_flow_rl/
+Robustness of Vision-Language-Action Models through Reinforcement Learning Post-Training
 
-A flow matching policy produces an action chunk by integrating a learned velocity field from noise. Integrating
-it deterministically gives no action likelihood, so there is nothing for a policy gradient to act on. This
-repository takes the standard route around that, following the approach of pi_RL (see `CITATION.cff`): one step
-of the integration is treated as stochastic, so the sampled chunk has a tractable log probability. Around that it
-builds the machinery such a run needs in order to be trustworthy rather than merely runnable.
+## Overview
 
-No results are reported here. Every number in this repository describes the machinery, what it trains, what it
-weighs and how long it takes, and none describes how well it works. The clip above is two episodes of footage
-and is not evidence of anything, whatever either panel appears to show. Measurements made with this substrate
-will be released with the accompanying paper.
+Supervised VLA policies imitate demonstration data. A policy that succeeds on the nominal training distribution can still fail when appearance, object placement, or physical conditions shift. Task success on the original distribution does not, by itself, measure that sensitivity.
 
-## What is in it
+This project studies reinforcement-learning post-training as a way to improve both nominal task performance and robustness under those shifts. The testbed is a pretrained SmolVLA policy in simulation on LIBERO. The trainer in this tree is proximal policy optimization on a flow-matching action head: one integration step is stochastic, the log-probability is restricted to the executed part of the action chunk, advantages come from generalized advantage estimation on a sparse success reward, and the critic is a separate value head. That code is upstream. This project has not run it, and it publishes no success rate of its own. The upstream README states the same limit: no results are reported there, and the clip in that README is footage rather than a measurement.
 
-- A stochastic sampler for flow matching policies that leaves the pretrained action head bit identical, driving
-  it through a callback rather than modifying it.
-- A policy gradient update that grades the action the environment actually executed, over the executed part of
-  the chunk only, with the likelihood ratio and its spread recorded once per update cycle, from the last update
-  of that cycle.
-- A critic head with adaptive target rescaling, kept outside the action head.
-- A parameter manifest and a learning rate proof printed before the first update, so what is training and at what
-  rate is a logged fact rather than an assumption.
-- A process isolated simulator harness with a sparse terminal reward and no shaping.
-- A deterministic evaluation entry point that reads several horizons out of one run, with a completeness gate
-  that refuses to produce a number from an unfinished evaluation.
-- A verification protocol whose rules are written down, with the subset that can be checked mechanically wired
-  into a single gate entry point.
+## Research Questions
 
-## Scope
+- Does nominal RL post-training improve robustness beyond nominal task success?
+- Does exposure to perturbations during RL training improve robustness?
+- Do robustness improvements generalize to unseen perturbations?
+- What are the trade-offs between nominal performance, robustness, and learning efficiency?
 
-This is the engineering substrate. It stands on its own as a starting point for anyone doing reinforcement
-learning fine tuning of a flow matching policy on limited hardware.
+## Methodology
 
-## Design: which part of the policy should train
+The planned comparison uses three policy configurations on LIBERO:
 
-A vision language action policy has two things that a fine tuning run can change: the representation that reads
-the instruction and the scene, and the decoder that turns that representation into an action. This repository
-offers four trainable surfaces, and the choice among them is the single argument most likely to decide whether a
-run does anything at all.
+- **Pretrained supervised SmolVLA without RL.** Load `HuggingFaceVLA/smolvla_libero` and evaluate with deterministic sampling (`mode="eval"` in `src/flow_sde.py`). No reinforcement-learning update. Not yet run here.
+- **Nominal PPO post-training.** The same initialization, then the upstream trainer (`src/train_flow_rl.py`) on unperturbed LIBERO tasks. The implementation is in this tree. It has not been run here, so this README does not claim that training succeeds.
+- **Perturbation-aware PPO post-training.** The same initialization, then PPO while training episodes include the perturbations below. Not implemented. The upstream rollout has no perturbation hook.
 
-The recommended default is **`expert_full_vlm_lora`**: the action expert trains at full rank, low rank adapters on
-the language backbone train alongside it, and the flow action head trains at full rank. The vision tower and the
-connector stay frozen.
+The upstream reward is sparse and terminal (`terminal_success` in `src/env_libero.py`): 1 when the task is solved on that step, otherwise 0. There is no shaping term. `src/gae.py` computes advantages over fixed-length segments and uses a bootstrap value when a segment ends before the episode does. `src/ppo_step.py` applies a clipped policy surrogate, a dual clip, and a clipped Huber value loss to the stored trajectory. `src/horizon_gate.py` refuses a run whose training horizon and evaluation horizon disagree.
 
-The reasoning is that the other three each leave out one of the two things that have to move.
+SmolVLA itself is not copied into this repository. It is imported from LeRobot at the version pinned in `requirements.txt` (`lerobot[smolvla]>=0.4.4,<0.5`). Four files are derivative works of RLinf and, for two of them, of LeRobot 0.4.4. Their headers, `NOTICE`, and `CHANGES_FROM_UPSTREAM.md` record that. Those files are unchanged in the migration commit.
 
-* `frozen` adapts the language side and leaves the action decoder exactly as it was. Whatever the representation
-  learns has to be expressed through a decoder that cannot change how it expresses anything.
-* `lora` opens the decoder through adapters and leaves the backbone bare. The decoder can shift, but only by as
-  much as a low rank correction allows, and the representation feeding it never adapts to the new objective.
-* `full` opens the decoder at full rank and still leaves the backbone bare, so a changed instruction has no path
-  to a changed representation.
+## Environment Perturbations
 
-Adapting the language side with low rank adapters while training the action decoder at full rank is the
-combination that the recent fine tuning literature reports as the one that works, and the same references also
-report that leaving the action head untouched is a common way to spend a training run without moving the policy:
+Perturbations are planned and are not implemented. The intended families are:
 
-* Kim et al., *Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success* (OpenVLA OFT), 2025.
-* *RoboMME*, a multimodal robot manipulation evaluation suite, 2026.
-* arXiv:2607.10172.
-* *VLAFlow*, arXiv:2607.01586.
+- **Visual.** Changes to appearance, such as color, texture, or lighting. Appearance changes are a first priority.
+- **Spatial.** Changes to the initial object position. Initial-position changes are a first priority.
+- **Physical.** Changes to dynamics or object properties. These are in scope after the appearance and initial-position perturbations.
 
-Two things this section is not. It is not a report of a measurement made here: **this repository publishes no
-results**, and the recommendation above is a statement about published practice and about which surfaces are
-structurally capable of changing what. And it is not a claim that the other three regimes are useless. They are
-kept precisely because a comparison needs controls: `full` is the adapter free control, `lora` is the adapter only
-decoder, and `frozen` is the decoder untouched control. A run in any of them has to say so, with
-`--control_arm` and a reason, and the reason is recorded.
+Each family is meant to be split later into perturbations used during training ("seen") and perturbations held out for testing ("unseen"). The specific parameter ranges are not fixed yet. When they are added, they belong on the observation path in `src/rollout.py` (`adapt_observation` / `collect_rollout`), not inside `src/flow_sde.py`, `src/gae.py`, or `src/ppo_step.py`.
 
-### What the gate enforces, and what it does not
+## Evaluation
 
-Before the first update, `build_model` prints the manifest and then refuses to continue unless the action
-expert's own parameters are at least 99 percent trainable, or the run declared itself a control. The fraction is
-computed rather than compared against a fixed parameter count, so it survives a change of model size, of layer
-count or of naming.
+Evaluation of the three configurations is planned. The intended protocol is:
 
-The check deliberately asks whether the expert's **own body** trains, not whether the expert appears anywhere in
-the trainable set. An adapter attached to the expert satisfies the second and not the first, and the difference
-between those two is invisible in a casually read parameter total.
+- **Nominal.** Success on unperturbed LIBERO tasks, deterministic sampling, the same horizon as training.
+- **Seen perturbations.** Success under perturbations that perturbation-aware training was allowed to use.
+- **Unseen perturbations.** Success under held-out perturbations.
 
-### The action head, and the narrowed parity invariant
+Reported quantities, once experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. This README does not report any of those numbers. Neither does the upstream README.
 
-In `frozen`, `lora` and `full` the pretrained action head does not train, and the protocol's behavioural parity
-check rests on that: before any parameter has moved, the wrapper must reproduce the pretrained action. The
-manifest's action head group reads zero in those three, and a nonzero reading is the fault.
+The upstream scoring entry point is `src/eval_cli.py`. It refuses a success rate until `src/completeness_gate.py` accepts the log, and it refuses a budget longer than the horizon that was actually run. `scripts/run_gates.sh` is the upstream mechanical check. It is not the robustness protocol above, and it has not been completed in this project (see Continuous Integration).
 
-In `expert_full_vlm_lora` the head trains at full rank, so the same reading inverts: **nonzero is correct there
-and a zero is the fault.** Parity with the pretrained policy is a statement about a surface that leaves the action
-path alone, and this regime does not. Asking it of a regime that deliberately changes the head would produce a red
-line that is waived on every run, which teaches a reader to ignore red lines. The scope of the invariant is
-therefore written into `protocol/VERIFICATION_PROTOCOL.md`, into `src/model_setup.py`, and into an executable test
-that fails if the scope is widened again.
+## Checkpoint
 
-### The reference anchor is refused in this regime, on purpose
+The trainer's download helper defaults to `HuggingFaceVLA/smolvla_libero`, revision `6721902bc4d61e50a3bfdb11dfb4cb626f05d102` (`scripts/download_base_policy.py`). The harness requires image keys `observation.images.image` and `observation.images.image2`, an 8-dimensional state, and 7-dimensional actions (`REQUIRED_IMAGE_KEYS`, `REQUIRED_STATE_DIM`, and `REQUIRED_ACTION_DIM` in `src/action_model.py`).
 
-The KL anchor recovers the pretrained policy by switching the adapters off in place, which avoids holding a second
-copy of the weights. That trick is only valid when **every** trainable parameter lives in an adapter. In
-`expert_full_vlm_lora` the expert and the head are trained in place, so switching the adapters off returns the
-trained policy with its adapters disabled, not the pretrained one; the anchor would pull toward the current policy
-and log a penalty that means nothing.
+`lerobot/smolvla_libero` is a different Hub repository. Its config declares `camera1` and `camera2`. `src/action_model.py` refuses that checkpoint. `lerobot/smolvla_base` is also refused: the helper's own comments say the base checkpoint declares different cameras and different widths. Do not use either as the initialization for this trainer.
 
-The entry point therefore refuses `--kl_coef` other than zero in this regime and says why. The alternative, a full
-second copy of the weights held for the reference, would roughly double the memory that this regime was chosen to
-fit inside, so it is not offered. This is a documented refusal rather than a silent fallback, which is the whole
-distinction: the check that used to guard this counted adapter layers and would have passed here, since adapters
-are present, while the requirement it was meant to enforce was not met.
+No weights are stored in this repository. The first download also fetches the backbone named in the policy config. See `NOTICE` for the license statements recorded for those Hub revisions.
 
-## Why some of this looks paranoid
+## Installation and Getting Started
 
-Several parts of this repository exist because the corresponding mistake was made and cost real time. They are
-kept because the failures share a shape: the run keeps going, the loss goes down, and nothing reports an error.
+Use a new environment. Do not install these pins into the existing LeRobot 0.7.1 environment (`conda` env `lerobot`): that environment is Python 3.12 and LeRobot 0.7.1, and this trainer imports `lerobot.envs.libero`, which that release moved.
 
-- The likelihood is summed over the executed surface only. Summing over the padded chunk inflates the variance of
-  the log ratio, pushes most samples outside the clip range, and throttles the gradient into a slow random walk.
-- The update grades stored trajectories. Drawing a fresh chunk at update time and pairing it with a stored
-  advantage gives a zero mean gradient, whose signature is a likelihood ratio pinned at one.
-- The parameter manifest is printed before training. A run that opened a surface other than the one intended still
-  reports a loss, because whatever is trainable moves, and the manifest is the only place the difference shows.
-- The evaluation completeness gate counts episodes. Checking that every task appeared at least once is satisfied
-  almost immediately and will happily produce a number from a fraction of the intended episodes.
-- The checkpoint stores the random state. Without it a resumed run draws a different sequence than an
-  uninterrupted one and is no longer reproducible from its seed.
+`environment.yml` is the upstream resolved set (Python 3.10.20, LeRobot 0.4.4, and the simulator packages listed there). `requirements.txt` is the constraint file (`lerobot[smolvla]>=0.4.4,<0.5`, `hf-libero>=0.1.3,<0.2.0`, `peft>=0.19,<0.20`). Both are unchanged. A course environment was created separately as the conda env `smolvla-flow-rl` (Python 3.10) and installed from `requirements.txt` without editing those pins. That install is not a claim that training runs.
 
-## Hardware
+Upstream install, from [README_UPSTREAM.md](./README_UPSTREAM.md):
 
-Developed and tested on a single RTX 5070 Ti laptop GPU (12GB VRAM), under WSL2. Anything with 12GB or more
-should behave the same; less is untested.
-
-## Getting started
-
-Linux, with a CUDA card and an EGL capable driver. EGL is the simulator's headless path, and the two run
-wrappers select it. The evaluation entry point is invoked directly rather than through a wrapper, so it inherits
-whatever the shell already has; export `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl` when scoring a checkpoint
-outside a training run.
-
-Install the dependencies, fetch the pretrained policy, then run the single task contact test before anything
-else. The contact test answers whether the setup can learn at all, which is worth establishing before reading
-anything into what a run produces.
-
-```
+```bash
 conda env create -f environment.yml
 conda activate smolvla-flow-rl
 
 # or, into an environment you already have:
 # pip install -r requirements.txt
-python -c "import libero.libero"          # answer the prompt once, see below
+python -c "import libero.libero"          # answer the prompt once
 python scripts/download_base_policy.py --out /path/to/base
 bash examples/single_task_contact.sh /path/to/base
 ```
 
-The middle line is there because the simulator package asks an interactive question the first time it is
-imported, before this repository gets a say, and writes the answer to `~/.libero/config.yaml`. Under a shell
-with no terminal attached, which is what `nohup`, `cron` and most continuous integration give it, the question
-cannot be answered and the import dies with an `EOFError` naming neither this repository nor the cause. Run it
-once by hand and the rest is unattended. Keep a network available for the first run beyond fetching the policy.
-A source checkout of the simulator carries its assets in the package; a wheel may not, in which case the first
-environment built fetches them. Which of those applies to the distribution declared here was not established on
-the machine this was developed on, where the source checkout is what is installed.
+The contact script is the upstream setup check. It needs a CUDA GPU, bf16, a downloaded checkpoint, and LIBERO. It has not been run for this project. Training requires fourteen arguments with no defaults (`python src/train_flow_rl.py --help`). Evaluation is `python src/eval_cli.py --help`. For headless rendering the upstream README sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl`.
 
-The policy must be one conditioned on this task suite. The harness supplies two camera images under particular
-keys, an eight dimensional state, and expects seven dimensional actions; a checkpoint declaring anything else
-cannot be driven by it. The generic SmolVLA base checkpoint is such a case, so the helper does not default to it.
-Passing a checkpoint that does not fit stops the run at construction with a message naming the mismatch, rather
-than failing later inside a simulator worker.
+There is no project command yet for perturbation generation or the robustness comparison.
 
-Fourteen arguments are required. Nine of them describe the run: the task list, the two paths, the number of
-update cycles, the rollout length, the episode length, the number of integration steps, the seed, and which part
-of the policy trains. The other five are tuning knobs: the exploration noise scale, the discount, the trace decay
-and the two learning rates.
+## Repository branches
 
-None of the fourteen has a default, and the reason is the same in both groups. A default silently becomes a
-project wide constant that nobody chose and everybody inherits. The trainable surface is in that list for the
-same reason and not as an oversight: opening a surface other than the one intended produces a run whose arguments
-look right and whose manifest is the only place the difference shows.
+GitHub's default branch is still `main` until a repository admin changes it. `main` is the LeRobot 0.7.1 history. The branch that should become the default is `flow-rl`. Changing the default branch is a GitHub setting (Settings → General → Default branch). It does not require a force-push. Renaming `flow-rl` to `main`, or deleting `main`, would remove or rewrite the existing `main` branch. That is not done in this migration. `archive/lerobot-0.7.1` is the same commit as the current `main`, so the LeRobot history stays reachable either way.
 
-```
-python src/train_flow_rl.py --help
+Remotes:
+
+| Remote | URL |
+| --- | --- |
+| `origin` | `git@github.com:AlexP210/smolvla-ppo-robustness.git` |
+| `upstream` | `https://github.com/mturan33/smolvla_flow_rl` |
+| `upstream-lerobot` | `https://github.com/huggingface/lerobot` |
+
+## Continuous Integration
+
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `flow-rl` and to `main`, and on manual runs. A newer commit cancels the older run for that branch or pull request. The job installs no packages. It runs the two upstream gates that need only the Python 3.10 standard library:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python scripts/check_syntax.py
+PYTHONDONTWRITEBYTECODE=1 python scripts/check_import_closure.py
 ```
 
-To score a checkpoint on its own, outside a training run, use the evaluation entry point. It refuses to print a
-rate until the completeness gate passes, then reads the same evaluation at every budget asked for.
+`scripts/check_syntax.py` parses every text file and fails on a syntax error, a carriage return, or a compiled artefact. Do not run `compileall` as a substitute: it writes bytecode, and this gate then fails. Ruff is not run. The PPO sources are upstream code and are not reformatted to satisfy a linter.
 
-```
-python src/eval_cli.py --help
-```
+### Checks that are not in CI
 
-## Verification
+These need dependencies or hardware this job does not install. None of them has been accepted as a project result.
 
-The mechanical checks run from one entry point.
+| Check | Why it is outside CI |
+| --- | --- |
+| `python tests/test_invariants.py` | Imports `train_flow_rl`, which imports LeRobot (`lerobot.policies.smolvla`, `lerobot.envs.libero`) and the LIBERO package. Also needs PyTorch, NumPy, and `peft` for the surface-gate tests. CPU is enough for the arithmetic tests; the import is not. |
+| `bash scripts/run_gates.sh` | Runs the two commands above, then the invariant file. If `~/.libero/config.yaml` is missing it skips the invariants and exits non-zero. The first `import libero.libero` is interactive. |
+| `bash examples/single_task_contact.sh` | GPU, bf16, a downloaded `HuggingFaceVLA/smolvla_libero` checkpoint, and LIBERO. This is a training smoke test. It has not been run here. |
+| `python src/train_flow_rl.py`, `python src/eval_cli.py` | Same simulator, checkpoint, and (for training) bf16 GPU requirements. Not run here. |
 
-```
-bash scripts/run_gates.sh
-```
+## Development Roadmap
 
-That entry point runs three: a syntax and artefact check over the tree, an import closure walk that fails if any
-entry point reaches a module this repository does not contain, and the invariant tests. The protocol contains
-further rules that are stated but not automated here; each is marked in the document with how far it is taken.
-See `protocol/VERIFICATION_PROTOCOL.md` for what each rule is and why it exists.
+- [x] Adopt `smolvla_flow_rl` as the training history (`flow-rl`, tag `flow-rl-baseline`)
+- [ ] Nominal policy evaluation on `HuggingFaceVLA/smolvla_libero`
+- [ ] One PPO update on one LIBERO task, with peak memory recorded
+- [ ] Perturbation framework (seen and unseen)
+- [ ] Robustness evaluation (nominal, seen, unseen)
+- [ ] Nominal PPO post-training, as an experiment with reported episodes
+- [ ] Perturbation-aware PPO post-training
+- [ ] Generalization and failure analysis
 
-## What the update of 30 August 2026 added
+## Repository Structure
 
-These are the parts that decide whether a number produced by this substrate can be trusted. None of them is
-an experiment and none reports a result.
+| Path | Role |
+| --- | --- |
+| `src/flow_sde.py` | Stochastic flow sampling and log-probability. Derivative of RLinf and LeRobot. |
+| `src/ppo_step.py`, `src/reference_ops.py`, `src/gae.py` | PPO update, reference loss operators, GAE |
+| `src/value_head.py` | Critic, outside the action head. Derivative of RLinf. |
+| `src/action_model.py` | Wrapper around LeRobot's SmolVLA policy. Derivative of RLinf and LeRobot. |
+| `src/rollout.py`, `src/env_libero.py` | Rollout buffer and LIBERO process harness |
+| `src/train_flow_rl.py`, `src/eval_cli.py`, `src/evaluate.py` | Training and deterministic evaluation entry points |
+| `src/model_setup.py`, `src/lora_utils.py` | Trainable-surface regimes and LoRA |
+| `src/horizon_gate.py`, `src/completeness_gate.py` | Single-horizon rule and evaluation completeness |
+| `tests/test_invariants.py` | Upstream invariant tests. Not all of them run without LeRobot and LIBERO. |
+| `scripts/check_syntax.py`, `scripts/check_import_closure.py` | Gates the active CI runs |
+| `requirements.txt`, `environment.yml` | Upstream dependency constraints, unchanged |
+| `protocol/VERIFICATION_PROTOCOL.md` | Upstream verification rules |
+| `NOTICE`, `LICENSE`, `THIRD_PARTY_LICENSES/`, `CHANGES_FROM_UPSTREAM.md` | Apache-2.0, attribution, and the record of what was adapted |
+| `README_UPSTREAM.md` | Preserved upstream README |
+| `docs/PROJECT_PLAN.md` | Technical plan for this course project |
+| `.github/workflows/ci.yml` | Active project CI |
 
-- **Reference operators in one file** (`src/reference_ops.py`): the policy loss with a dual clip at 3.0, the
-  value loss with a trust region of 0.2 and a Huber delta of 10.0, and truncation compensation on the reward
-  side. Each cites the reference file and configuration key it follows. They live in one module because two
-  PPO paths that each write their own clip drift apart, and a drift between two runs you intend to compare is
-  not a bug in one of them, it is a confound in the comparison.
-- **Gradient accumulation** (`src/ppo_step.py`): the optimiser steps once per global batch rather than once
-  per micro batch. The failure this prevents is silent. A loop that calls `zero_grad` and `step` on every
-  micro batch trains at the micro batch size while every banner and log line reports the pooled figure;
-  nothing errors and the curves look ordinary. `accum_total=1` reproduces the old behaviour exactly.
-- **Seeded resets** (`src/seeding.py`): a per-outer, per-environment stream from `SeedSequence`. Without it a
-  second unseeded reset at the top of the outer loop makes two same-seed runs diverge at the first rollout
-  step, on the observation side, before the sampler is called once.
-- **The single horizon gate** (`src/horizon_gate.py`): training, in-training evaluation and the final
-  canonical evaluation must read one horizon field, or the run does not start. A series measured at two
-  horizons is not a series.
-- **The run configuration gate** (`src/run_config.py`, `scripts/diff_run_config.py`): every run writes what
-  it was, with claimed arithmetic and measured arithmetic in separate blocks, and the diff tool names which
-  fields make two runs incomparable. Module constants and environment flags are recorded too, because the
-  field that turns out to matter is usually the one that is not an argparse argument.
-- **Shape-based completeness for evaluation scans** (`scripts/canon_scan.sh`): an interrupted scan relaunched
-  into an appending file holds two scans, and any completeness check that counts lines will call that file
-  complete. Completeness is the shape of the scan, not the number of lines in it.
+Planned project components, which are not in the tree yet: a perturbation framework, wiring those perturbations into the rollout, and the robustness evaluation that compares nominal, seen, and unseen conditions.
 
-## Limitations
+## Acknowledgments and License
 
-Stated because a substrate that only advertises its gates is advertising.
+The training code is `smolvla_flow_rl` by Mehmet Turan Yardimci, Apache License 2.0: [github.com/mturan33/smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl). Cite it and the works it cites; see [CITATION.cff](./CITATION.cff). Upstream documentation, copyright lines, and license text are preserved. See [README_UPSTREAM.md](./README_UPSTREAM.md), [LICENSE](./LICENSE), and [NOTICE](./NOTICE).
 
-- **No results.** Nothing here reports how well any of this works. The gates say a number would be
-  trustworthy; they say nothing about what the number is. A paper is in preparation.
-- **One benchmark, one policy family.** Everything is exercised on LIBERO with a SmolVLA-family policy. None
-  of it has been run against another simulator or another flow matching policy, so portability is untested
-  rather than claimed.
-- **The likelihood is from one stochastic step.** That is the simple route to a tractable log probability and
-  it is not the only one; a learned noise network is the alternative in the literature. No comparison between
-  those choices is made here.
-- **The gates are shape checks, not correctness proofs.** A run that passes every gate in this repository can
-  still be wrong. What the gates remove is a specific family of silent failures in which the run is not the
-  run its own configuration describes.
-- **Single consumer GPU scale.** Everything is sized for one card. Nothing here has been exercised at
-  multi-node scale and the accumulation path in particular has only been run single process.
-- **bf16 is required** by the training path. Ampere or newer; verify with
-  `python -c "import torch; print(torch.cuda.is_bf16_supported())"` rather than inferring from the model name.
+- **RLinf.** The sampler, critic, PPO step, and action-model wrapper derive from RLinf commit `832db3f5c7aa6c61d72f20aaf43b7ce0f4ad2b03`. Apache-2.0. <https://github.com/RLinf/RLinf>
+- **LeRobot.** Dependency and, for `src/flow_sde.py` and `src/action_model.py`, an upstream at version 0.4.4. Apache-2.0. <https://github.com/huggingface/lerobot>
+- **SmolVLA.** Shukor et al., "SmolVLA: A Vision-Language-Action Model for Affordable and Efficient Robotics," arXiv:2506.01844, 2025.
+- **LIBERO.** Liu et al., "LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning," arXiv:2306.03310, 2023. No LIBERO source is vendored. The MIT notices for LIBERO and robosuite are in `THIRD_PARTY_LICENSES/`.
+- **PPO.** Schulman et al., "Proximal Policy Optimization Algorithms," arXiv:1707.06347, 2017. The implementation in this tree follows the RLinf operators named in `src/reference_ops.py`. This project has not verified it experimentally.
 
-## Licence and attribution
-
-Apache License 2.0, see `LICENSE`. Four files are derivative works of RLinf: the sampler, the critic head, the
-update, and the action model wrapper. Two of those, the sampler and the wrapper, additionally follow LeRobot's own
-policy implementation, so they have two upstreams each. All four carry notices of modification in their headers.
-See `NOTICE` and `CHANGES_FROM_UPSTREAM.md`. LeRobot is therefore both a dependency and an upstream. No LIBERO
-code is adapted here, though its scenes and objects are what the clip at the top renders; `NOTICE` covers that.
-No source file from any of them is redistributed here.
-
-No model weights are distributed. The download helper fetches two repositories from the Hugging Face Hub: the
-policy, `HuggingFaceVLA/smolvla_libero`, and the backbone that policy asks for, which it reads out of the
-policy's own configuration rather than assuming. Both state the Apache License 2.0 on their model cards at the
-revisions recorded in `NOTICE`.
-
-Those terms are theirs and not this repository's. If you point `--repo` somewhere else, the helper fetches
-whatever backbone that policy asks for and says nothing about the terms of either, because it cannot know them.
-
-If you use this, please cite it and the upstream work, see `CITATION.cff`.
+Copyright for the upstream files remains with their authors, as stated in those files and in `NOTICE`. This repository is distributed under the Apache License, Version 2.0. See [LICENSE](./LICENSE).

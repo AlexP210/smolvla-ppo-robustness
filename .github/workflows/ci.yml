@@ -1,0 +1,55 @@
+# Lightweight CI for the course project on the smolvla_flow_rl history.
+#
+# Runs the two upstream gates that need only the Python 3.10 standard library.
+# Does not install LeRobot, LIBERO, MuJoCo, CUDA, checkpoints, or Ruff.
+# tests/test_invariants.py imports the trainer (LeRobot and LIBERO) and is not run here.
+# The PPO sources are not linted or reformatted.
+#
+# GitHub's default branch is still main (the archived LeRobot 0.7.1 history) until an
+# admin changes it. This file lives on flow-rl. Triggers include both names so the
+# job follows this history if flow-rl later becomes the default branch.
+
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - flow-rl
+      - main
+  push:
+    branches:
+      - flow-rl
+      - main
+
+# Cancel an older run for the same branch or pull request when a newer commit arrives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  project-checks:
+    name: Syntax and import closure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.10"
+
+      # check_syntax.py fails if bytecode was written into the tree. Do not compileall.
+      - name: Upstream syntax and import-closure gates
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python scripts/check_syntax.py
+          python scripts/check_import_closure.py
