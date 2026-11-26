@@ -114,7 +114,7 @@ Over those 20 last steps, the values that were written are:
 
 `kl_to_reference` is the optional penalty against a frozen copy of the policy. The pilot set `--kl_coef 0`, which leaves that anchor off, so the field is zero because it was not computed. It is not an approximate KL between the stored policy and the updated one.
 
-The following were computed during the update and not written down. No number for them is inferred here:
+The following were computed during the update and not written down. No number for them is inferred here. [PPO_DIAGNOSTICS.md](./PPO_DIAGNOSTICS.md) is the logging that records them on a later run. This pilot's `metrics.jsonl` was not rewritten.
 
 - Advantage mean, standard deviation, or range. `normalize_advantages` standardizes the whole 4×32 batch, then the tensor is consumed by the update and dropped.
 - A reward distribution. Only the window mean is stored, so which of the four workers succeeded is not in the file. The three nonzero means equal `1/128`, which identifies one success in that window and nothing finer.

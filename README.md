@@ -21,6 +21,8 @@ These four statements are different, and only the first three have been observed
 
 The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
 
+The pilot log kept only the last optimizer step of each cycle. [docs/PPO_DIAGNOSTICS.md](./docs/PPO_DIAGNOSTICS.md) adds cycle-wide counts for advantages, rewards, values, returns, explained variance, approximate KL, ratios, clip fraction, losses, and gradient norms. Those numbers are not part of the loss, and recording them does not draw random numbers. The 20-update pilot was not repeated to fill them in.
+
 ## Project Title
 
 Robustness of Vision-Language-Action Models through Reinforcement Learning Post-Training
@@ -170,7 +172,9 @@ These need dependencies or hardware this job does not install. None of them has 
 | `README_UPSTREAM.md` | Preserved upstream README |
 | `docs/PROJECT_PLAN.md` | Technical plan for this course project |
 | `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
-| `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
+| `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot and the matched checkpoint comparison |
+| `docs/PPO_DIAGNOSTICS.md` | Cycle-wide PPO logs that do not enter the objective |
+| `src/ppo_diagnostics.py` | Summaries of advantages, rewards, values, and optimizer steps |
 | `scripts/baseline_reproduction.py` | Measurement harness for the baseline report |
 | `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint |
 | `.github/workflows/ci.yml` | Active project CI |

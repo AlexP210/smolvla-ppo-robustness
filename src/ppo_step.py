@@ -185,6 +185,11 @@ def ppo_step_stored(
     ratio = log_ratio.exp()
     pg_loss = pg_loss_reference(ratio, advantages, clip_range).mean()
     clip_frac = float(((ratio - 1.0).abs() > clip_range).float().mean().item())
+    # Detached copies. The surrogate above is the objective; these two numbers are only logged.
+    _ratio = ratio.detach()
+    _log_ratio = log_ratio.detach()
+    approx_kl = float(((_ratio - 1.0) - _log_ratio).mean().item())
+    ratio_min = float(_ratio.min().item())
 
     values = new_vals.squeeze(-1) if (new_vals.ndim == 2 and new_vals.shape[-1] == 1) \
         else new_vals.flatten(start_dim=1).mean(dim=-1)
@@ -245,6 +250,8 @@ def ppo_step_stored(
             "pg_loss": float(pg_loss.detach().float().item()),
             "v_loss": float(v_loss.detach().float().item()),
             "ratio_mean": float(ratio.detach().float().mean().item()),
+            "ratio_min": ratio_min,
+            "approx_kl": approx_kl,
             "clip_frac": clip_frac,
             "grad_norm": float("nan"),
             "step_skipped": False,
@@ -276,6 +283,8 @@ def ppo_step_stored(
         "v_loss": float(v_loss.detach().float().item()),
         "kl_to_reference": float(kl_measure.float().item()),
         "ratio_mean": float(ratio.detach().float().mean().item()),
+        "ratio_min": ratio_min,
+        "approx_kl": approx_kl,
         # Population spread, not the sample estimate. The batch here is one entry per environment, and the
         # documented first run has a single task and therefore a single environment, where the corrected form is
         # a division by zero: it returns a quiet NaN, warns once per update, and lands in the metrics file as a
