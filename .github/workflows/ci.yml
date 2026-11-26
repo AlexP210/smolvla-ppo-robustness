@@ -5,9 +5,10 @@
 # tests/test_invariants.py imports the trainer (LeRobot and LIBERO) and is not run here.
 # The PPO sources are not linted or reformatted.
 #
-# GitHub's default branch is still main (the archived LeRobot 0.7.1 history) until an
-# admin changes it. This file lives on flow-rl. Triggers include both names so the
-# job follows this history if flow-rl later becomes the default branch.
+# GitHub's default branch is still main (the archived LeRobot 0.7.1 history).
+# This file lives on flow-rl. Triggers include flow-rl and main so pushes and
+# pull requests to the research branch run, and so the job still runs if an
+# admin later renames flow-rl to main. Do not merge main into flow-rl.
 
 name: CI
 

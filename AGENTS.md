@@ -6,7 +6,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-Course project on robustness of vision-language-action policies under PPO post-training. The working branch `flow-rl` is the git history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl). Tag `flow-rl-baseline` is the unmodified upstream commit `c161af2100610cf9f411bce23ad57180eb771d44`. The LeRobot 0.7.1 history is `archive/lerobot-0.7.1` (tag `original-baseline`). Do not merge those histories.
+Course project on robustness of vision-language-action policies under PPO post-training. The research branch `flow-rl` is the git history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl). Tag `flow-rl-baseline` is the unmodified upstream commit `c161af2100610cf9f411bce23ad57180eb771d44`. The LeRobot 0.7.1 history is `archive/lerobot-0.7.1`, the same commit as GitHub's current `main` (`462e4571`; tag `original-baseline`). Do not merge those histories into `flow-rl`.
 
 The planned comparison is three configurations on LIBERO: pretrained `HuggingFaceVLA/smolvla_libero` with deterministic sampling, nominal PPO, and perturbation-aware PPO. Perturbations are not implemented. Do not claim that PPO training works until a run has been executed and recorded.
 
@@ -15,7 +15,7 @@ The planned comparison is three configurations on LIBERO: pretrained `HuggingFac
 - `origin`: `git@github.com:AlexP210/smolvla-ppo-robustness.git`
 - `upstream`: `https://github.com/mturan33/smolvla_flow_rl`
 - `upstream-lerobot`: `https://github.com/huggingface/lerobot` (the archived line only)
-- Do not force-push. Do not delete `main`. GitHub's default branch stays `main` until an admin changes it to `flow-rl`. Replacing the name `main` with this history would rewrite or delete the existing branch.
+- Do not force-push. Do not delete `main` or `archive/lerobot-0.7.1`. GitHub's default branch stays `main` until an admin renames `flow-rl` to `main`. Pull requests for this project target `flow-rl`.
 
 ## What not to change
 

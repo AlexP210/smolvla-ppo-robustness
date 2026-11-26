@@ -1,6 +1,6 @@
 # Project plan
 
-`origin/flow-rl` at `3c357d62` is the development branch. The baseline reproduction and the pretrained baseline validation are merged. This file is the contract for the next parallel work. It does not implement that work.
+`origin/flow-rl` is the development branch. This plan was written against `3c357d62`. The baseline reproduction, the pretrained baseline validation, the PPO diagnostics, and the evaluation seeds are merged. The nominal reproduction and its ten-episode paired comparison are committed on `feature/a-nominal-rl` and are not yet merged. The moderate-task training config and the three one-change ablations on that branch were not launched. This file is the contract for the next parallel work. It does not implement that work.
 
 Completed measurements, which this plan does not reopen:
 
@@ -34,12 +34,12 @@ Each workstream branches from current `flow-rl` and opens its own pull request b
 
 Import closure reads the git index. A new module is invisible to the gate until `git add`. Third-party imports must already be in `requirements.txt`. No new package pin is part of this contract.
 
-Two older branches exist and are not on `flow-rl`:
+Two older branches are duplicates. Their replacements are already on `flow-rl`:
 
-- `feature/ppo-diagnostics` at `dcf05837` logs cycle-wide PPO statistics from detached tensors.
-- `feature/reproducible-eval` at `9b09e993` pins evaluation reset seeds and initial flow noise.
+- `feature/ppo-diagnostics` at `dcf05837` is the earlier diagnostics commit. `feature/a-ppo-diagnostics` (`ae6be93e`) is the copy on `flow-rl`.
+- `feature/reproducible-eval` at `9b09e993` is the earlier seed commit. `feature/c-reproducible-eval` (`c42639e2`) is the copy on `flow-rl`.
 
-Both also rewrite `README.md` and `docs/NOMINAL_PPO_PILOT.md` against an older text. Cherry-pick the `src/` and `tests/` files onto a fresh branch. Do not merge either branch whole.
+Both older branches also rewrite `README.md` and `docs/NOMINAL_PPO_PILOT.md` against an older text. Do not merge either branch whole.
 
 ### Shared schemas
 
@@ -122,7 +122,7 @@ Nominal PPO only. Perturbation-aware training waits until B's hook is on `flow-r
 | `feature/a-nominal-learning` | One documented training run long enough to plot success against update, using the diagnostics from the first branch |
 | `feature/a-hparams` | A checked-in config file for that run, and a loader that refuses a file whose `action_steps` is not 1 |
 
-`feature/a-ppo-diagnostics` starts first. The analysis branch can be written against synthetic tensors in parallel. The learning run waits for the diagnostics to be on `flow-rl`. The hyperparameter file can be drafted in parallel and is accepted only when the learning run uses it.
+`feature/a-ppo-diagnostics` is on `flow-rl`. The analysis branch can be written against synthetic tensors in parallel. The learning run on `feature/a-nominal-rl` has a filled paired comparison and does not establish that PPO improved success. It is not merged into `flow-rl`. The hyperparameter file is accepted only when a later learning run uses it. The saved ablation configs on that branch were not launched.
 
 ### Files
 
