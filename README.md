@@ -2,7 +2,7 @@
 
 This repository is a course research project on reinforcement-learning post-training for vision-language-action (VLA) policies. The training code is the history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl) (Mehmet Turan Yardimci). The upstream README is preserved, unmodified, in [README_UPSTREAM.md](./README_UPSTREAM.md). The tag `flow-rl-baseline` is that upstream commit, `c161af2100610cf9f411bce23ad57180eb771d44`, before the documentation and CI added for this project.
 
-The previous LeRobot 0.7.1 line is not in this branch. It is `archive/lerobot-0.7.1`. The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
+The previous LeRobot 0.7.1 line is not in this branch. It is preserved at the same commit on `archive/lerobot-0.7.1` and `archive/lerobot-main`. The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
 
 A passing CI check is not evidence that training works. The measurements that do exist are separated below. Robustness perturbations are still not implemented.
 
@@ -118,7 +118,7 @@ Perturbation generation and the robustness comparison are specified in [docs/PRO
 
 ## Repository branches
 
-GitHub's default branch is still `main` until a repository admin changes it. `main` is the LeRobot 0.7.1 history. The branch that should become the default is `flow-rl`. Changing the default branch is a GitHub setting (Settings → General → Default branch). It does not require a force-push. Renaming `flow-rl` to `main`, or deleting `main`, would remove or rewrite the existing `main` branch. That is not done in this migration. `archive/lerobot-0.7.1` is the same commit as the current `main`, so the LeRobot history stays reachable either way.
+`main` is the default branch. It is this `smolvla_flow_rl` history, renamed from `flow-rl`. The LeRobot 0.7.1 history is not on `main`. The previous default branch was renamed to `archive/lerobot-main`, and `archive/lerobot-0.7.1` points at the same commit (`462e4571`). Do not merge those branches into `main`, and do not force-push `main`. Feature branches open pull requests against `main`.
 
 Remotes:
 
@@ -130,7 +130,7 @@ Remotes:
 
 ## Continuous Integration
 
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `flow-rl` and to `main`, and on manual runs. A newer commit cancels the older run for that branch or pull request. The job installs no packages. It runs the two upstream gates that need only the Python 3.10 standard library:
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `main`, and on manual runs. A newer commit cancels the older run for that branch or pull request. The job installs no packages. It runs the two upstream gates that need only the Python 3.10 standard library:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python scripts/check_syntax.py
@@ -152,7 +152,7 @@ These need dependencies or hardware this job does not install. None of them has 
 
 ## Development Roadmap
 
-- [x] Adopt `smolvla_flow_rl` as the training history (`flow-rl`, tag `flow-rl-baseline`)
+- [x] Adopt `smolvla_flow_rl` as the training history (`main`, formerly `flow-rl`; tag `flow-rl-baseline`)
 - [x] Pretrained inference on one LIBERO episode, and a ten-task screen that is not a success rate
 - [x] Pretrained baseline validation: native LeRobot 0.4.4 versus Flow RL on LIBERO-Long, including action parity and execution horizons ([docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md))
 - [x] One PPO update on one LIBERO task, with peak memory recorded

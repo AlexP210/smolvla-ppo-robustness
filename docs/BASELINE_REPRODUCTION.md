@@ -1,6 +1,6 @@
 # Baseline reproduction and feasibility
 
-Branch `feature/baseline-reproduction`, created from `flow-rl` at `ee1f5a83` (the migration commit whose parent is `flow-rl-baseline` `c161af21`). No file under `src/` was changed. The PPO update, sampler, reward, and horizon gate are the upstream implementations.
+Branch `feature/baseline-reproduction`, created from `flow-rl` (now `main`) at `ee1f5a83` (the migration commit whose parent is `flow-rl-baseline` `c161af21`). No file under `src/` was changed. The PPO update, sampler, reward, and horizon gate are the upstream implementations.
 
 These runs show that one deterministic episode can be executed and that one PPO update can be applied. They do not show that PPO improves task success. A single success, and a ratio of one before any learning has had time to matter, are checks that the machinery runs.
 

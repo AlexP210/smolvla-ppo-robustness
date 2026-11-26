@@ -6,7 +6,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-Course project on robustness of vision-language-action policies under PPO post-training. The working branch `flow-rl` is the git history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl). Tag `flow-rl-baseline` is the unmodified upstream commit `c161af2100610cf9f411bce23ad57180eb771d44`. The LeRobot 0.7.1 history is `archive/lerobot-0.7.1` (tag `original-baseline`). Do not merge those histories.
+Course project on robustness of vision-language-action policies under PPO post-training. The default branch `main` is the git history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl), renamed from `flow-rl`. Tag `flow-rl-baseline` is the unmodified upstream commit `c161af2100610cf9f411bce23ad57180eb771d44`. The LeRobot 0.7.1 history is `archive/lerobot-0.7.1` and `archive/lerobot-main` (both `462e4571`; tag `original-baseline`). Do not merge those histories into `main`.
 
 The planned comparison is three configurations on LIBERO: pretrained `HuggingFaceVLA/smolvla_libero` with deterministic sampling, nominal PPO, and perturbation-aware PPO. Perturbations are not implemented. Do not claim that PPO training works until a run has been executed and recorded.
 
@@ -15,7 +15,7 @@ The planned comparison is three configurations on LIBERO: pretrained `HuggingFac
 - `origin`: `git@github.com:AlexP210/smolvla-ppo-robustness.git`
 - `upstream`: `https://github.com/mturan33/smolvla_flow_rl`
 - `upstream-lerobot`: `https://github.com/huggingface/lerobot` (the archived line only)
-- Do not force-push. Do not delete `main`. GitHub's default branch stays `main` until an admin changes it to `flow-rl`. Replacing the name `main` with this history would rewrite or delete the existing branch.
+- Do not force-push. Do not delete `archive/lerobot-0.7.1` or `archive/lerobot-main`. `main` is the default branch. Pull requests target `main`.
 
 ## What not to change
 
@@ -27,7 +27,7 @@ The planned comparison is three configurations on LIBERO: pretrained `HuggingFac
 
 ## Active CI
 
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `flow-rl` and `main`, and on manual runs. It does not install LeRobot, simulators, CUDA, or checkpoints, and it does not use secrets. From the repository root:
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `main`, and on manual runs. It does not install LeRobot, simulators, CUDA, or checkpoints, and it does not use secrets. From the repository root:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python scripts/check_syntax.py

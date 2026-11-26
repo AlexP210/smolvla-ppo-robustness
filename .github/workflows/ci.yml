@@ -5,9 +5,9 @@
 # tests/test_invariants.py imports the trainer (LeRobot and LIBERO) and is not run here.
 # The PPO sources are not linted or reformatted.
 #
-# GitHub's default branch is still main (the archived LeRobot 0.7.1 history) until an
-# admin changes it. This file lives on flow-rl. Triggers include both names so the
-# job follows this history if flow-rl later becomes the default branch.
+# The default branch is main: the smolvla_flow_rl history, renamed from flow-rl.
+# The LeRobot 0.7.1 history is archive/lerobot-main and archive/lerobot-0.7.1.
+# This workflow follows main only. Do not merge those archived histories into main.
 
 name: CI
 
@@ -15,11 +15,9 @@ on:
   workflow_dispatch:
   pull_request:
     branches:
-      - flow-rl
       - main
   push:
     branches:
-      - flow-rl
       - main
 
 # Cancel an older run for the same branch or pull request when a newer commit arrives.

@@ -1,6 +1,6 @@
 # Project plan
 
-`origin/flow-rl` at `3c357d62` is the development branch. The baseline reproduction and the pretrained baseline validation are merged. This file is the contract for the next parallel work. It does not implement that work.
+`main` at `3c357d62` is the base this plan was written against. That branch was then named `flow-rl`; it is now the default branch. The baseline reproduction and the pretrained baseline validation are merged. This file is the contract for the next parallel work. It does not implement that work.
 
 Completed measurements, which this plan does not reopen:
 
@@ -26,15 +26,15 @@ These files stay as they are on `3c357d62` unless a later task names a concrete 
 
 Workstream A may append detached statistics to the dictionary `ppo_step_stored` already returns. That addition is not a change to the loss, the generator, or the optimizer. `--action_steps` stays default 1 in `src/train_flow_rl.py` and `src/eval_cli.py`.
 
-`archive/lerobot-0.7.1` and `origin/main` stay at `462e4571`. Do not merge them into `flow-rl`.
+`archive/lerobot-0.7.1` and `archive/lerobot-main` stay at `462e4571`. Do not merge them into `main`.
 
 ## How the three workstreams share the tree
 
-Each workstream branches from current `flow-rl` and opens its own pull request back to `flow-rl`. CI on that base runs `scripts/check_syntax.py` and `scripts/check_import_closure.py`. New tests are CPU scripts under `tests/`. They must not import LIBERO, MuJoCo, or a checkpoint. Do not edit `scripts/run_gates.sh` or `.github/workflows/ci.yml` in a feature branch: every workstream would then conflict on the same two files. A test is run locally with `python tests/test_<name>.py`.
+Each workstream branches from current `main` and opens its own pull request back to `main`. CI on that base runs `scripts/check_syntax.py` and `scripts/check_import_closure.py`. New tests are CPU scripts under `tests/`. They must not import LIBERO, MuJoCo, or a checkpoint. Do not edit `scripts/run_gates.sh` or `.github/workflows/ci.yml` in a feature branch: every workstream would then conflict on the same two files. A test is run locally with `python tests/test_<name>.py`.
 
 Import closure reads the git index. A new module is invisible to the gate until `git add`. Third-party imports must already be in `requirements.txt`. No new package pin is part of this contract.
 
-Two older branches exist and are not on `flow-rl`:
+Two older branches exist and are not on `main`:
 
 - `feature/ppo-diagnostics` at `dcf05837` logs cycle-wide PPO statistics from detached tensors.
 - `feature/reproducible-eval` at `9b09e993` pins evaluation reset seeds and initial flow noise.
@@ -43,7 +43,7 @@ Both also rewrite `README.md` and `docs/NOMINAL_PPO_PILOT.md` against an older t
 
 ### Shared schemas
 
-One JSON object, written by the feature that owns it and read by the others. Fields are additive. A reader ignores unknown keys. A writer does not remove a key that is already on `flow-rl`.
+One JSON object, written by the feature that owns it and read by the others. Fields are additive. A reader ignores unknown keys. A writer does not remove a key that is already on `main`.
 
 **Run record.** `src/run_config.py` already stores the training argv. Workstream A extends that record with the hyperparameter block below. Workstreams B and C do not write it.
 
@@ -111,7 +111,7 @@ One JSON object, written by the feature that owns it and read by the others. Fie
 
 ## Workstream A: RL post-training
 
-Nominal PPO only. Perturbation-aware training waits until B's hook is on `flow-rl`, and it is not one of the four features below.
+Nominal PPO only. Perturbation-aware training waits until B's hook is on `main`, and it is not one of the four features below.
 
 ### Features
 
@@ -122,7 +122,7 @@ Nominal PPO only. Perturbation-aware training waits until B's hook is on `flow-r
 | `feature/a-nominal-learning` | One documented training run long enough to plot success against update, using the diagnostics from the first branch |
 | `feature/a-hparams` | A checked-in config file for that run, and a loader that refuses a file whose `action_steps` is not 1 |
 
-`feature/a-ppo-diagnostics` starts first. The analysis branch can be written against synthetic tensors in parallel. The learning run waits for the diagnostics to be on `flow-rl`. The hyperparameter file can be drafted in parallel and is accepted only when the learning run uses it.
+`feature/a-ppo-diagnostics` starts first. The analysis branch can be written against synthetic tensors in parallel. The learning run waits for the diagnostics to be on `main`. The hyperparameter file can be drafted in parallel and is accepted only when the learning run uses it.
 
 ### Files
 
@@ -270,7 +270,7 @@ A separate conda environment may install the fork later for a comparison study. 
 ## Dependency order
 
 ```text
-flow-rl (3c357d62)
+main (3c357d62)
 ├── A  diagnostics ──► reward analysis (synthetic, parallel)
 │                  └─► nominal learning run ──► hyperparameter file
 ├── B  spec ──► visual ──┐
@@ -281,4 +281,4 @@ flow-rl (3c357d62)
 
 A's learning run, B's hooks, and C's suites are the three merges that must be sequenced. Everything to their left can be reviewed in parallel.
 
-Perturbation-aware PPO is a later branch. It depends on A's diagnostics being on `flow-rl` and on B's hook accepting a seen spec during `collect_rollout` while evaluation still applies seen and unseen. It is not started in this slice. It still does not change `src/gae.py` or the PPO loss.
+Perturbation-aware PPO is a later branch. It depends on A's diagnostics being on `main` and on B's hook accepting a seen spec during `collect_rollout` while evaluation still applies seen and unseen. It is not started in this slice. It still does not change `src/gae.py` or the PPO loss.
