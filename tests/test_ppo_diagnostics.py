@@ -38,6 +38,13 @@ def test_reward_counts_successes() -> None:
     _check(report["per_env_reward_sum"] == [1.0, 0.0], "per-environment sums must keep which worker succeeded")
 
 
+def test_explained_variance_accepts_a_host_and_a_device_tensor() -> None:
+    target = torch.tensor([1.0, 3.0, 5.0])
+    predicted = target.cuda() if torch.cuda.is_available() else target
+    _check(explained_variance(predicted, target) == 1.0,
+           "explained variance must compare a host value tensor with device returns")
+
+
 def test_explained_variance() -> None:
     target = torch.tensor([1.0, 3.0, 5.0])
     _check(explained_variance(target, target) == 1.0, "a perfect prediction must explain all of the variance")
@@ -107,6 +114,7 @@ def test_loss_line_is_unchanged() -> None:
 def main() -> None:
     test_advantage_normalization_is_visible()
     test_reward_counts_successes()
+    test_explained_variance_accepts_a_host_and_a_device_tensor()
     test_explained_variance()
     test_kl_and_cycle_aggregate()
     test_summaries_leave_the_generator_alone()

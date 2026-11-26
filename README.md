@@ -2,13 +2,13 @@
 
 This repository is a course research project on reinforcement-learning post-training for vision-language-action (VLA) policies. The training code is the history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl) (Mehmet Turan Yardimci). The upstream README is preserved, unmodified, in [README_UPSTREAM.md](./README_UPSTREAM.md). The tag `flow-rl-baseline` is that upstream commit, `c161af2100610cf9f411bce23ad57180eb771d44`, before the documentation and CI added for this project.
 
-The previous LeRobot 0.7.1 line is not in this branch. It is `archive/lerobot-0.7.1`. The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
+The previous LeRobot 0.7.1 line is not in this branch. It is `archive/lerobot-0.7.1`, the same commit as GitHub's current `main` (`462e4571`). The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
 
 A passing CI check is not evidence that training works. The measurements that do exist are separated below. Robustness perturbations are still not implemented.
 
 ## What has been measured
 
-Reports: [docs/BASELINE_REPRODUCTION.md](./docs/BASELINE_REPRODUCTION.md), [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md), and [docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md). The policy predicts 50 actions per call. Upstream training and evaluation execute one of them (`--action_steps 1`, and `n_action_steps` is 1 in the checkpoint). That training default was not changed.
+Reports: [docs/BASELINE_REPRODUCTION.md](./docs/BASELINE_REPRODUCTION.md), [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md), [docs/NOMINAL_RL_EXPERIMENTS.md](./docs/NOMINAL_RL_EXPERIMENTS.md), and [docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md). The policy predicts 50 actions per call. Upstream training and evaluation execute one of them (`--action_steps 1`, and `n_action_steps` is 1 in the checkpoint). That training default was not changed.
 
 These four statements are different, and only the first three have been observed:
 
@@ -17,7 +17,7 @@ These four statements are different, and only the first three have been observed
 | Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. A 10-episode native LeRobot 0.4.4 evaluation of every LIBERO-Long task then scored 53/100 with one executed action and 46/100 with ten. Details are in the validation report. |
 | PPO optimization runs | One stored-versus-recomputed update had ratio 1.0 before any parameter moved. Gradients reached the action expert, action head, and critic. Frozen parameters, including the vision tower, did not change. |
 | Multi-cycle training collects reward | Twenty upstream updates on four copies of task 0 finished. The first-step ratio was 1.0. Three collection windows each contained one sparse success. |
-| PPO improves task success | Not established. On the same eight seeds, the initialization succeeded twice and the checkpoint after 20 updates succeeded zero times. Eight episodes do not measure a change in success. |
+| PPO improves task success | Not established. On the ten-episode scenarios, the pretrained initialization succeeded on 14 of 40 episodes across tasks 0, 1, 2, and 9. The earlier 20-update checkpoint and a reproduction of that configuration each succeeded on 0 of 40. The zeros include the training task and three tasks the update did not train. That sample does not establish learning, and it does not establish catastrophic forgetting. The diagnostic reading is in the nominal-RL report. |
 
 The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
 
@@ -112,13 +112,13 @@ python scripts/download_base_policy.py --out /path/to/base
 bash examples/single_task_contact.sh /path/to/base
 ```
 
-The contact script is the upstream setup check. It needs a CUDA GPU, bf16, a downloaded checkpoint, and LIBERO. That script itself has not been launched. The pilot in [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md) calls `src/train_flow_rl.py` directly, with the contact example's noise, learning rates, discount, and rollout length, and with the recommended `expert_full_vlm_lora` regime rather than the example's illustrative `full` regime. Training requires fourteen arguments with no defaults (`python src/train_flow_rl.py --help`). Evaluation is `python src/eval_cli.py --help`. For headless rendering the upstream README sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl`. On this machine, robosuite's default file log at `/tmp/robosuite.log` is owned by another account. The conda environment sets `FILE_LOGGING_LEVEL = None` so that handler is not opened. The workaround is local to the environment and is written up in the baseline report.
+The contact script is the upstream setup check. It needs a CUDA GPU, bf16, a downloaded checkpoint, and LIBERO. That script itself has not been launched. The pilot in [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md) calls `src/train_flow_rl.py` directly, with the contact example's noise, learning rates, discount, and rollout length, and with the recommended `expert_full_vlm_lora` regime rather than the example's illustrative `full` regime. The reproduction of that configuration, the fixed evaluation scenarios, and the paired checkpoint comparison are in [docs/NOMINAL_RL_EXPERIMENTS.md](./docs/NOMINAL_RL_EXPERIMENTS.md). Training requires fourteen arguments with no defaults (`python src/train_flow_rl.py --help`). A `ppo_run_v1` file can supply them through `--config`. Evaluation is `python src/eval_cli.py --help`. For headless rendering the upstream README sets `MUJOCO_GL=egl` and `PYOPENGL_PLATFORM=egl`. On this machine, robosuite's default file log at `/tmp/robosuite.log` is owned by another account. The conda environment sets `FILE_LOGGING_LEVEL = None` so that handler is not opened. The workaround is local to the environment and is written up in the baseline report.
 
 Perturbation generation and the robustness comparison are specified in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md) and are not implemented.
 
 ## Repository branches
 
-GitHub's default branch is still `main` until a repository admin changes it. `main` is the LeRobot 0.7.1 history. The branch that should become the default is `flow-rl`. Changing the default branch is a GitHub setting (Settings → General → Default branch). It does not require a force-push. Renaming `flow-rl` to `main`, or deleting `main`, would remove or rewrite the existing `main` branch. That is not done in this migration. `archive/lerobot-0.7.1` is the same commit as the current `main`, so the LeRobot history stays reachable either way.
+The research branch is `flow-rl`. Pull requests for this project target `flow-rl`. GitHub's default branch is still `main`, the LeRobot 0.7.1 history, at the same commit as `archive/lerobot-0.7.1` (`462e4571`). Renaming `flow-rl` to `main` is a later admin step. It is not done. Do not merge `main` or `archive/lerobot-0.7.1` into `flow-rl`, and do not force-push.
 
 Remotes:
 
@@ -152,19 +152,27 @@ These need dependencies or hardware this job does not install. None of them has 
 
 ## Development Roadmap
 
+Completed work through the diagnostics and the evaluation seeds is on `flow-rl`. This branch, `feature/a-nominal-rl`, adds the nominal reproduction and the ten-episode paired comparison. Those results are not yet merged into `flow-rl`. Pending items have not been started. The contract for the three workstreams is [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md).
+
+### Completed, on `flow-rl`
+
 - [x] Adopt `smolvla_flow_rl` as the training history (`flow-rl`, tag `flow-rl-baseline`)
 - [x] Pretrained inference on one LIBERO episode, and a ten-task screen that is not a success rate
 - [x] Pretrained baseline validation: native LeRobot 0.4.4 versus Flow RL on LIBERO-Long, including action parity and execution horizons ([docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md))
 - [x] One PPO update on one LIBERO task, with peak memory recorded
-- [x] A 20-update nominal pilot that collects sparse reward and does not establish learning
-The remaining items are the three workstreams in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md). They can proceed in parallel. PPO diagnostics and the separate evaluation seeds are implemented. The other items are not.
-
-Workstream A, RL post-training:
-
+- [x] A 20-update nominal pilot that collects sparse reward and does not establish learning ([docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md))
 - [x] PPO training diagnostics that do not change the loss ([docs/PPO_DIAGNOSTICS.md](./docs/PPO_DIAGNOSTICS.md))
-- [ ] Reward and advantage analysis
-- [ ] Nominal PPO learning experiments
-- [ ] Hyperparameter selection and a reproducible training configuration
+- [x] Reproducible environment and policy sampling ([docs/REPRODUCIBLE_EVAL.md](./docs/REPRODUCIBLE_EVAL.md))
+
+### On this branch
+
+- [x] Reward and advantage analysis of the 20-update reproduction, from the training log ([docs/NOMINAL_RL_EXPERIMENTS.md](./docs/NOMINAL_RL_EXPERIMENTS.md))
+- [x] Controlled reproduction of the original configuration, and the ten-episode paired comparison. The initialization scores 14/40. Each 20-update checkpoint scores 0/40. That does not establish learning.
+- [x] Fixed nominal scenarios for task 0 and for tasks 1, 2, and 9, with the paired comparison of the pretrained initialization and both checkpoints
+- [ ] A checked-in hyperparameter file for a finished learning run. Three one-change configs are saved under `configs/ablations/` and were not launched. No recipe is selected.
+- [ ] Moderate-task training on tasks 1, 2, and 9. `configs/nominal_ppo_libero10_moderate.json` is saved and was not launched.
+
+### Pending
 
 Workstream B, perturbation framework:
 
@@ -174,13 +182,10 @@ Workstream B, perturbation framework:
 - [ ] Reproducible perturbation sampling
 - [ ] One integration hook for training and evaluation
 
-Workstream C, robustness evaluation:
+Workstream C, beyond the seeds and the nominal scenarios:
 
-- [x] Reproducible environment and policy sampling ([docs/REPRODUCIBLE_EVAL.md](./docs/REPRODUCIBLE_EVAL.md))
-- [ ] Fixed evaluation scenarios
-- [ ] Nominal, seen, unseen, and severity-based evaluation
+- [ ] Seen, unseen, and severity-based evaluation
 - [ ] Per-task metrics and robustness curves
-- [ ] Paired comparisons of a pretrained and a post-trained policy
 
 - [ ] Perturbation-aware PPO, after A and B have both landed
 - [ ] Generalization and failure analysis
@@ -209,16 +214,23 @@ Workstream C, robustness evaluation:
 | `tests/test_ppo_diagnostics.py` | CPU checks for those summaries |
 | `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
 | `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
+| `docs/NOMINAL_RL_EXPERIMENTS.md` | Scenario comparison and the controlled reproduction of that pilot |
+| `configs/nominal_ppo_libero10_task0.json` | The reproduction's training configuration. `action_steps` is 1 |
+| `configs/nominal_ppo_libero10_moderate.json` | The same update on tasks 1, 2, and 9. Not launched |
+| `configs/ablations/` | One-change actor learning rate, reference KL, and LoRA configs. Not launched |
+| `configs/scenarios/libero10_nominal.json` | Ten-episode task-0 scenario, perturbation off |
+| `configs/scenarios/libero10_moderate.json` | Ten-episode scenario for tasks 1, 2, and 9 |
+| `src/eval_scenario.py` | Loader for `eval_scenario_v1`, shared with the robustness workstream |
 | `docs/PRETRAINED_BASELINE_VALIDATION.md` | Native LeRobot evaluation of the pretrained checkpoint, and the horizon comparison |
 | `scripts/pretrained_baseline_validation.py` | Measurement harness for that validation |
 | `scripts/baseline_reproduction.py` | Measurement harness for the baseline report |
-| `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint. It does not yet pass the separate eval seeds |
+| `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint. `scenario` passes the scenario seeds. `compare` is still the eight-episode call and does not |
 | `docs/REPRODUCIBLE_EVAL.md` | Separate environment and policy seeds for evaluation |
 | `src/eval_noise.py` | Reset seeds and float32 flow noise keyed by episode id |
 | `tests/test_eval_noise.py` | CPU checks that those draws ignore batch layout |
 | `.github/workflows/ci.yml` | Active project CI |
 
-Planned project components, which are not in the tree yet: a perturbation framework, wiring those perturbations into the rollout, fixed evaluation scenarios, and the robustness comparison across nominal, seen, and unseen conditions. Evaluation can now pin its reset seed and its initial flow noise. The default, with those seeds unset, is still the historical path.
+Nominal ten-episode scenarios for task 0 and for tasks 1, 2, and 9 are in the tree, and the paired comparison that uses them is in [docs/NOMINAL_RL_EXPERIMENTS.md](./docs/NOMINAL_RL_EXPERIMENTS.md). Still absent: a perturbation framework, wiring those perturbations into the rollout, and the robustness comparison across seen and unseen conditions. Evaluation can pin its reset seed and its initial flow noise. The default, with those seeds unset, is still the historical path.
 
 ## Acknowledgments and License
 

@@ -23,9 +23,9 @@ The action sample starts from `torch.normal(0, 1)` of shape `(batch, chunk, max_
 
 The same `episode_id`, `batch`, and `decision` therefore match across a pretrained policy and a later checkpoint. That is the common-random-number pair. `src/eval_cli.py` accepts `--env_seed` and `--policy_seed`. Leaving either flag unset keeps that half of the historical path. `--action_steps` still defaults to 1, and the Euler step in `src/flow_sde.py` is not edited.
 
-`scripts/matched_checkpoint_eval.py` is unchanged. It still calls `evaluate` without these seeds, so it still follows the historical reset and the global noise draw. The recorded 2/8 and 0/8 comparison was produced that way and was not recomputed. A reported paired comparison needs ten episodes per task and one shared scenario. That is a later feature, and eight episodes are not that comparison.
+`scripts/matched_checkpoint_eval.py compare` is the earlier eight-episode call and still omits these seeds. The recorded 2/8 and 0/8 comparison was produced that way. `scenario` loads one `eval_scenario_v1` file and gives that same object to both checkpoints. Ten episodes per task is the minimum that command will load.
 
-`episodes_per_task` still repeats the episode ids the caller passed. The batch index changes the reset seed and the noise tag, and the LIBERO initial-state id is `episode_id % 50`. A file of ten distinct initial states is the scenario feature, which is not in this branch.
+`episode_ids_by_batch` gives each outer episode its own ids. The stored initial state is `episode_id % 50`. The id itself is a function of the task id, the initial state, and a replicate index, so reordering the batch does not change a task's draw. Training resets stay in `src/seeding.py`.
 
 ## What the tests separate
 
@@ -37,4 +37,4 @@ The same `episode_id`, `batch`, and `decision` therefore match across a pretrain
 - `sde_sample` in `flow_ode`, with a velocity that is a per-element scale, turns that shared noise into bitwise-equal actions for the solo row and the matching row of the batch. A neural forward can still disagree in the last bits when the batch width changes. That residual is numerical. It is not this noise draw, and this test does not call the network.
 - The noise helper does not advance the global generator. `evaluate` still defaults `env_seed` and `policy_seed` to `None`, and the historical reset expression is still the branch taken when `env_seed` is unset.
 
-Fixed scenarios, severity ladders, robustness curves, and the ten-episode paired comparison are not implemented here. Perturbations are not implemented here. In-training evaluation does not pass the new seeds, so a training run's own eval stays on the historical path until a later change opts in.
+Seen, unseen, and severity scenarios are not implemented here. Perturbations are not implemented here. A training run passes the scenario seeds only when `--eval_scenario` is set. The nominal files and the paired results are in [NOMINAL_RL_EXPERIMENTS.md](./NOMINAL_RL_EXPERIMENTS.md).

@@ -14,6 +14,10 @@ Usage, from the repository root:
 
   python scripts/matched_checkpoint_eval.py probe-seed --base-policy /path/to/policy --output-dir runs/matched/probe
   python scripts/matched_checkpoint_eval.py compare --base-policy /path/to/policy --checkpoint runs/.../step_000020.pt --output-dir runs/matched/compare
+  python scripts/matched_checkpoint_eval.py scenario --base-policy /path/to/policy --checkpoint runs/.../step_000020.pt --scenario configs/scenarios/libero10_nominal.json --output-dir runs/nominal_rl/paired_task0
+
+`compare` is the earlier eight-episode call and does not pass the scenario seeds.
+`scenario` is the reported comparison: one eval_scenario_v1 file, both checkpoints, at least ten episodes per task.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import numpy as np
 import torch
@@ -33,6 +38,8 @@ from action_model import SmolVLAConfig, SmolVLAForRLActionPrediction  # noqa: E4
 from checkpoint import load_policy_only  # noqa: E402
 from env_libero import adapt_observation, build_env, get_task_prompts, set_initial_states  # noqa: E402
 from env_processors import make_processors  # noqa: E402
+from eval_scenario import (episode_id_rows, load_eval_scenario,  # noqa: E402
+                           success_by_interaction, success_by_task)
 from evaluate import N_INIT_STATES, evaluate  # noqa: E402
 from model_setup import build_model  # noqa: E402
 from rollout import exec_action  # noqa: E402
@@ -187,6 +194,79 @@ def _run_eval(model, output_dir: str, cycle: int) -> dict:
     }
 
 
+def _run_scenario(model, output_dir: str, cycle: int, scenario: dict) -> dict:
+    tasks = [(scenario["suite"], int(task_id)) for task_id in scenario["task_ids"]]
+    rows = episode_id_rows(scenario, tasks)
+    ve, _, _, suite_limit = build_env(tasks, int(scenario["horizon"]), SEED)
+    env_pre, env_post = make_processors(tasks[0][0], model.lerobot_cfg)
+    prompts = get_task_prompts(ve)
+    events = os.path.join(output_dir, "events.jsonl")
+    if os.path.exists(events):
+        os.remove(events)
+    started = time.time()
+    try:
+        rate = evaluate(
+            model, ve, env_pre, env_post, prompts, tasks,
+            episodes_per_task=int(scenario["episodes"]), seed=SEED,
+            horizon=int(scenario["horizon"]), events_path=events,
+            device=next(model.parameters()).device,
+            n_action_steps=int(scenario["action_steps"]), cycle=cycle,
+            env_seed=int(scenario["env_seed"]), policy_seed=int(scenario["policy_seed"]),
+            episode_ids_by_batch=rows)
+    finally:
+        ve.close()
+    elapsed = round(time.time() - started, 1)
+    recorded = [json.loads(line) for line in open(events)]
+    per_task = success_by_task(recorded, scenario["task_ids"])
+    return {
+        "suite_limit": suite_limit,
+        "pooled_success_rate": rate,
+        "episodes": recorded,
+        "per_task": per_task,
+        "by_simulator_step": success_by_interaction(recorded, (100, 200, 300, 400, 520)),
+        "successes": int(sum(item["successes"] for item in per_task)),
+        "attempts": int(sum(item["attempts"] for item in per_task)),
+        "wall_seconds": elapsed,
+    }
+
+
+def command_scenario(args) -> None:
+    scenario = load_eval_scenario(args.scenario)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    os.makedirs(args.output_dir, exist_ok=True)
+    report = {
+        "scenario_path": args.scenario,
+        "scenario": scenario,
+        "perturbation": None,
+        "n_action_steps": int(scenario["action_steps"]),
+        "note": "Both checkpoints receive this scenario, including its env seed, policy seed, and episode ids. "
+                "The initialization is the pretrained policy with zero-initialized adapters. "
+                "Perturbations are off.",
+    }
+    for label, checkpoint in (
+            ("initialization", None),
+            ("checkpoint", args.checkpoint)):
+        model, loaded = _training_policy(args.base_policy, device, checkpoint)
+        out = os.path.join(args.output_dir, label)
+        os.makedirs(out, exist_ok=True)
+        cycle_label = 0 if loaded is None else int(loaded["step"])
+        result = _run_scenario(model, out, cycle_label, scenario)
+        result["checkpoint"] = checkpoint
+        result["load"] = loaded
+        report[label] = result
+        del model
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+    path = os.path.join(args.output_dir, "comparison.json")
+    with open(path, "w") as handle:
+        json.dump(report, handle, indent=2)
+    print(json.dumps({key: report[key] for key in report if key != "scenario"}, indent=2), flush=True)
+    for label in ("initialization", "checkpoint"):
+        block = report[label]
+        print("%s %d/%d in %.1fs" % (label, block["successes"], block["attempts"], block["wall_seconds"]),
+              flush=True)
+
+
 def command_compare(args) -> None:
     device = torch.device("cuda")
     os.makedirs(args.output_dir, exist_ok=True)
@@ -233,9 +313,16 @@ def main() -> None:
     compare.add_argument("--base-policy", required=True)
     compare.add_argument("--checkpoint", required=True)
     compare.add_argument("--output-dir", required=True)
+    scenario = sub.add_parser("scenario")
+    scenario.add_argument("--base-policy", required=True)
+    scenario.add_argument("--checkpoint", required=True)
+    scenario.add_argument("--scenario", required=True)
+    scenario.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     if args.command == "probe-seed":
         command_probe(args)
+    elif args.command == "scenario":
+        command_scenario(args)
     else:
         command_compare(args)
 

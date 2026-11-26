@@ -46,7 +46,8 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
              events_path: Optional[str] = None, n_action_steps: int = 1,
              cycle: Optional[int] = None,
              env_seed: Optional[int] = None, policy_seed: Optional[int] = None,
-             episode_ids: Optional[Sequence[int]] = None) -> float:
+             episode_ids: Optional[Sequence[int]] = None,
+             episode_ids_by_batch: Optional[Sequence[Sequence[int]]] = None) -> float:
     """Run a fixed number of episodes per task and return the pooled success rate.
 
     One episode per task runs in each batch, so the batch index and the task together identify an episode. Every
@@ -61,7 +62,9 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
     `env_seed` and `policy_seed` are optional and independent. Leave both unset and the reset rule and the
     global noise draw are the historical ones, including their dependence on the batch width. Set them and each
     episode id gets its own reset seed and its own standard-normal flow noise, neither of which depends on the
-    other ids in the batch. The integration itself is still the deterministic Euler step.
+    other ids in the batch. `episode_ids_by_batch` replaces that id list on each outer episode, which is how a
+    scenario gives every episode its own stored initial state. The integration itself is still the deterministic
+    Euler step.
 
     `horizon` counts ENVIRONMENT STEPS, the same unit the episode cap uses, and so does the recorded success step.
     That has to be said because the loop below is over decisions, and each decision executes several environment
@@ -85,6 +88,12 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
 
     pinned = env_seed is not None or policy_seed is not None
     ids = resolve_episode_ids(episode_ids, n_envs) if pinned else None
+    if episode_ids_by_batch is not None:
+        if env_seed is None:
+            raise ValueError("episode_ids_by_batch requires env_seed, so the stored initial state follows the ids")
+        if len(episode_ids_by_batch) != episodes_per_task:
+            raise ValueError("episode_ids_by_batch has %d rows and episodes_per_task is %d"
+                             % (len(episode_ids_by_batch), episodes_per_task))
     steps_per_decision = max(1, int(n_action_steps))
     n_decisions = max(1, int(horizon) // steps_per_decision)
     if int(horizon) % steps_per_decision:
@@ -94,14 +103,17 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
 
     try:
         for batch in range(episodes_per_task):
+            row_ids = ids
+            if episode_ids_by_batch is not None:
+                row_ids = resolve_episode_ids(episode_ids_by_batch[batch], n_envs)
             if env_seed is None:
                 set_initial_states(ve, "eval", n_envs, per_task=1, eval_batch=batch, n_init_states=N_INIT_STATES)
                 reset_seeds = [eval_seed_base + batch * n_envs + i for i in range(n_envs)]
             else:
                 # One initial state per episode id. The previous rule gave every worker in a batch the same
                 # id, and the reset seed grew with the batch width, so removing a worker changed the others.
-                reset_seeds = [env_reset_seed(env_seed, ids[i], batch) for i in range(n_envs)]
-                ve.set_attr("init_state_id", [int(ids[i]) % N_INIT_STATES for i in range(n_envs)])
+                reset_seeds = [env_reset_seed(env_seed, row_ids[i], batch) for i in range(n_envs)]
+                ve.set_attr("init_state_id", [int(row_ids[i]) % N_INIT_STATES for i in range(n_envs)])
                 ve.set_attr("_reset_stride", [0] * n_envs)
             raw, _ = ve.reset(seed=reset_seeds)
 
@@ -114,7 +126,7 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
                 noise = None
                 if policy_seed is not None:
                     noise = initial_flow_noise(
-                        policy_seed, ids, t,
+                        policy_seed, row_ids, t,
                         int(model.lerobot_cfg.chunk_size), int(model.lerobot_cfg.max_action_dim),
                         batch=batch, device=device)
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_cuda):
@@ -147,7 +159,9 @@ def evaluate(model, ve, env_pre, env_post, task_prompts, tasks: Sequence[Tuple[s
                             "success": bool(solved[i]), "succ_step": int(success_step[i]),
                         }
                         if pinned:
-                            record["episode_id"] = int(ids[i])
+                            record["episode_id"] = int(row_ids[i])
+                            record["init_state_id"] = int(row_ids[i]) % N_INIT_STATES
+                            record["task_id"] = int(tasks[i][1])
                             record["env_seed"] = None if env_seed is None else int(env_seed)
                             record["policy_seed"] = None if policy_seed is None else int(policy_seed)
                         # Both units, written down, so no reader has to work out which one a number is in.

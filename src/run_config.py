@@ -126,6 +126,91 @@ def record_measured(output_dir, measured):
     return disagree
 
 
+PPO_RUN_SCHEMA = "ppo_run_v1"
+PPO_RUN_KEYS = (
+    "schema", "seed", "regime", "action_steps", "episode_length", "rollout_steps",
+    "noise_level", "gamma", "gae_lambda", "clip_range", "value_coef", "grad_clip",
+    "kl_coef", "actor_lr", "critic_lr",
+)
+
+# Flags a nominal config may carry besides the hyperparameter block. Paths and the
+# task list differ between machines and between the reproduction and a later run.
+# They are not part of the block two launches must match.
+_PPO_RUN_FLAGS = PPO_RUN_KEYS + (
+    "tasks", "base_policy", "output_dir", "updates", "epochs", "denoise_steps",
+    "eval_every", "eval_episodes", "eval_horizon", "ckpt_every", "eval_scenario",
+    "perturbation",
+)
+
+
+def load_ppo_run(path):
+    """Load a training config. A file whose action_steps is not 1 is rejected."""
+    with io.open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    if not isinstance(document, dict) or document.get("schema") != PPO_RUN_SCHEMA:
+        raise ValueError("training config schema must be %s" % PPO_RUN_SCHEMA)
+    missing = [key for key in PPO_RUN_KEYS if key not in document]
+    if missing:
+        raise ValueError("training config is missing %s" % ", ".join(missing))
+    if int(document["action_steps"]) != 1:
+        raise ValueError("ppo_run_v1 refuses action_steps other than 1, got %r" % (document["action_steps"],))
+    if "perturbation" in document and document["perturbation"] is not None:
+        raise ValueError("a nominal config keeps perturbation null")
+    return document
+
+
+def ppo_run_block(document):
+    """The hyperparameter block. Extra keys in the file are not part of it."""
+    block = {"schema": PPO_RUN_SCHEMA}
+    for key in PPO_RUN_KEYS:
+        if key == "schema":
+            continue
+        value = document[key]
+        if key in ("seed", "action_steps", "episode_length", "rollout_steps"):
+            value = int(value)
+        elif key == "regime":
+            value = str(value)
+        else:
+            value = float(value)
+        block[key] = value
+    return block
+
+
+def ppo_run_from_args(args):
+    """The same block, read back from a parsed trainer invocation."""
+    return ppo_run_block({
+        "schema": PPO_RUN_SCHEMA,
+        "seed": args.seed,
+        "regime": args.regime,
+        "action_steps": args.action_steps,
+        "episode_length": args.episode_length,
+        "rollout_steps": args.rollout_steps,
+        "noise_level": args.noise_level,
+        "gamma": args.gamma,
+        "gae_lambda": args.gae_lambda,
+        "clip_range": args.clip_range,
+        "value_coef": args.value_coef,
+        "grad_clip": args.grad_clip,
+        "kl_coef": args.kl_coef,
+        "actor_lr": args.actor_lr,
+        "critic_lr": args.critic_lr,
+    })
+
+
+def argv_from_ppo_run(document):
+    """Flags for train_flow_rl.py. Later flags on the real command line override these."""
+    flags = []
+    for key in _PPO_RUN_FLAGS:
+        if key in ("schema", "perturbation") or key not in document or document[key] is None:
+            continue
+        flags.extend(["--%s" % key, str(document[key])])
+    if document.get("control_arm"):
+        flags.append("--control_arm")
+    if document.get("control_reason"):
+        flags.extend(["--control_reason", str(document["control_reason"])])
+    return flags
+
+
 def assert_written(output_dir):
     """The GATE. Training does not start without this file.
 

@@ -52,9 +52,12 @@ from ppo_diagnostics import (aggregate_optimizer_steps, distribution,  # noqa: E
 from ppo_step import ppo_step_stored, reference_is_available  # noqa: E402
 from rollout import collect_rollout  # noqa: E402
 from tripwire import TRIPPED_EXIT_CODE, Tripwire  # noqa: E402
+from eval_scenario import (assert_scenario_covers, episode_id_rows,  # noqa: E402
+                           load_eval_scenario)
 from evaluate import evaluate  # noqa: E402
 from horizon_gate import check as horizon_check
-from run_config import assert_written, dump_run_config
+from run_config import (assert_written, argv_from_ppo_run, dump_run_config,  # noqa: E402
+                        load_ppo_run, ppo_run_from_args)
 from seeding import train_reset_seeds
 
 
@@ -69,7 +72,26 @@ ADAPTER_RANK_DEFAULT = 8
 ADAPTER_ALPHA_DEFAULT = 16
 
 
+def _expand_config(argv):
+    """Replace `--config file` with the flags that file names. Later flags win."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    config_path = None
+    if "--config" in argv:
+        index = argv.index("--config")
+        if index + 1 >= len(argv):
+            raise SystemExit("--config needs the path of a ppo_run_v1 file.")
+        config_path = argv[index + 1]
+        del argv[index:index + 2]
+        try:
+            document = load_ppo_run(config_path)
+        except ValueError as error:
+            raise SystemExit("training config %s: %s" % (config_path, error))
+        argv = argv_from_ppo_run(document) + argv
+    return argv, config_path
+
+
 def parse_args(argv=None):
+    argv, config_path = _expand_config(argv)
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 
     p.add_argument("--tasks", required=True,
@@ -118,6 +140,9 @@ def parse_args(argv=None):
     p.add_argument("--eval_every", type=int, default=0, help="cycles between evaluations, zero disables")
     p.add_argument("--eval_episodes", type=int, default=0, help="episodes per task at each evaluation")
     p.add_argument("--eval_horizon", type=int, default=0, help="scoring budget, zero means the episode length")
+    p.add_argument("--eval_scenario", default=None,
+                   help="eval_scenario_v1 file. Its env and policy seeds are separate from --seed. "
+                        "Unset keeps the historical evaluation reset.")
     p.add_argument("--ckpt_every", type=int, default=0)
     p.add_argument("--resume", action="store_true")
 
@@ -130,7 +155,9 @@ def parse_args(argv=None):
     p.add_argument("--trip_success_floor", type=float, default=None)
     p.add_argument("--trip_window", type=int, default=None,
                    help="how many update cycles the guard watches, not optimiser steps")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    args.config = config_path
+    return args
 
 
 def check_horizon_args(args) -> None:
@@ -426,11 +453,40 @@ def main(argv=None):
     check_regime_args(args)
     check_trainer_args(args)
     os.makedirs(args.output_dir, exist_ok=True)
+    scenario = None
+    if args.eval_scenario:
+        try:
+            scenario = load_eval_scenario(args.eval_scenario)
+            assert_scenario_covers(scenario, parse_tasks(args.tasks))
+        except ValueError as error:
+            raise SystemExit("eval scenario: %s" % error)
+        if int(scenario["action_steps"]) != int(args.action_steps):
+            raise SystemExit(
+                "eval scenario executes %s actions and this run executes %s. The two have to match."
+                % (scenario["action_steps"], args.action_steps))
+        scoring = args.eval_horizon or args.episode_length
+        if int(scenario["horizon"]) != int(scoring):
+            raise SystemExit(
+                "eval scenario horizon is %s and this run scores %s." % (scenario["horizon"], scoring))
+        if not (args.eval_every and args.eval_episodes):
+            raise SystemExit(
+                "--eval_scenario was given, but --eval_every or --eval_episodes is zero, so the scenario "
+                "would never run.")
 
     # The run states what it was BEFORE it produces a number. Written here rather than at the end, because a
     # run that dies still needs to be identifiable, and a configuration recorded after the fact is a memory.
+    extra = {"ppo_run_v1": ppo_run_from_args(args), "perturbation": None}
+    if scenario is not None:
+        extra["eval_scenario_v1"] = {
+            "path": args.eval_scenario,
+            "env_seed": int(scenario["env_seed"]),
+            "policy_seed": int(scenario["policy_seed"]),
+            "episodes": int(scenario["episodes"]),
+            "task_ids": [int(task_id) for task_id in scenario["task_ids"]],
+        }
     dump_run_config(args, args.output_dir,
                     derived={"pooled_timesteps_claimed": args.rollout_steps * args.updates},
+                    extra=extra,
                     repo_paths={"repo": os.path.dirname(os.path.dirname(os.path.abspath(__file__)))})
     assert_written(args.output_dir)
 
@@ -637,11 +693,27 @@ def main(argv=None):
         if args.eval_every and (cycle + 1) % args.eval_every == 0 and args.eval_episodes:
             # The chunk execution length is forwarded on purpose. Evaluating under a different regime than the
             # one trained measures a policy the run never produced, and nothing in the output would say so.
+            eval_kwargs = {}
+            if scenario is not None:
+                # The scenario's seeds are not --seed. Collection keeps train_reset_seeds.
+                # A short in-training sample uses the first eval_episodes rows of the file.
+                rows = episode_id_rows(scenario, tasks)
+                if args.eval_episodes > len(rows):
+                    ve.close()
+                    raise SystemExit(
+                        "--eval_episodes %d is longer than the scenario's %d episodes."
+                        % (args.eval_episodes, len(rows)))
+                eval_kwargs = {
+                    "env_seed": int(scenario["env_seed"]),
+                    "policy_seed": int(scenario["policy_seed"]),
+                    "episode_ids_by_batch": rows[:args.eval_episodes],
+                }
             rate = evaluate(model, ve, env_pre, env_post, prompts, tasks,
                             episodes_per_task=args.eval_episodes, seed=args.seed,
                             horizon=args.eval_horizon or args.episode_length,
                             events_path=os.path.join(args.output_dir, "events.jsonl"), device=device,
-                            n_action_steps=args.action_steps, cycle=cycle + 1)
+                            n_action_steps=args.action_steps, cycle=cycle + 1,
+                            **eval_kwargs)
             print("  [eval] cycle %d pooled success %.3f" % (cycle + 1, rate), flush=True)
             if guard.observe_eval(rate):
                 ve.close()

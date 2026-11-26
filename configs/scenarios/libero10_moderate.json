@@ -1,0 +1,12 @@
+{
+  "schema": "eval_scenario_v1",
+  "suite": "libero_10",
+  "task_ids": [1, 2, 9],
+  "episodes": 10,
+  "init_state_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "env_seed": 1000,
+  "policy_seed": 2000,
+  "horizon": 520,
+  "action_steps": 1,
+  "perturbation": null
+}

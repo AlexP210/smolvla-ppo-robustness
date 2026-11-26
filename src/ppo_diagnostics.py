@@ -56,8 +56,10 @@ def reward_report(rewards: torch.Tensor) -> dict:
 
 def explained_variance(predicted: torch.Tensor, target: torch.Tensor) -> Optional[float]:
     """1 - Var(target - predicted) / Var(target), population variances. None when the target does not vary."""
-    y = target.detach().float().reshape(-1)
-    y_hat = predicted.detach().float().reshape(-1)
+    # Collection stores values on the host. GAE returns the targets on the training device.
+    # The subtraction is a log, so both copies move to the host before it. Neither tensor is written back.
+    y = target.detach().float().reshape(-1).cpu()
+    y_hat = predicted.detach().float().reshape(-1).cpu()
     if y.numel() == 0 or y.numel() != y_hat.numel():
         return None
     var_y = float(y.var(correction=0).item())
