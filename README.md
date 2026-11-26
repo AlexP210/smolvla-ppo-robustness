@@ -14,12 +14,25 @@ These four statements are different, and only the first three have been observed
 
 | Claim | Status |
 | --- | --- |
-| Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. A later 10-episode evaluation of every LIBERO-Long task with the native LeRobot 0.4.4 evaluator scored 53/100 at the checkpoint's `n_action_steps=1` and 46/100 at `n_action_steps=10`. The leaderboard's Long column is 0.60. The details are in the validation report. |
+| Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. A 10-episode native LeRobot 0.4.4 evaluation of every LIBERO-Long task then scored 53/100 with one executed action and 46/100 with ten. Details are in the validation report. |
 | PPO optimization runs | One stored-versus-recomputed update had ratio 1.0 before any parameter moved. Gradients reached the action expert, action head, and critic. Frozen parameters, including the vision tower, did not change. |
 | Multi-cycle training collects reward | Twenty upstream updates on four copies of task 0 finished. The first-step ratio was 1.0. Three collection windows each contained one sparse success. |
 | PPO improves task success | Not established. On the same eight seeds, the initialization succeeded twice and the checkpoint after 20 updates succeeded zero times. Eight episodes do not measure a change in success. |
 
-The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision. On one shared observation and one shared noise tensor, that float32 integration matches LeRobot's own sampler exactly. The validation report also runs horizons 1, 5, 10, 25, and 50 without making any of them the trainer default.
+The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
+
+### Published benchmark and our measurement
+
+The [LIBERO VLA leaderboard](https://huggingface.co/spaces/HuggingFaceVLA/libero-vla-leaderboard) lists 0.60 for `HuggingFaceVLA/smolvla_libero` on LIBERO-Long. That entry is a published table value. The space does not record the episode count, seeds, MuJoCo version, or action horizon behind it. Its contribution example executes 10 actions for one `libero_spatial` episode from a different local directory. The checkpoint config sets `n_action_steps` to 1. The exact leaderboard evaluation protocol is not fully established. [docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md) is our measurement, on LeRobot 0.4.4, with 10 episodes of each LIBERO-Long task.
+
+| Setting | Measured success |
+| --- | --- |
+| Native LeRobot, 1 executed action | 53/100 |
+| Native LeRobot, 10 executed actions | 46/100 |
+| Flow RL, bfloat16, horizons 1, 5, 10, 25, 50 | 46, 44, 41, 47, and 30 out of 100 |
+| Flow RL, float32, horizons 1 and 10 | 42/100 and 40/100 |
+
+On one shared observation and one shared standard-normal noise tensor, float32 Flow RL integration matches the native sampler exactly. Bfloat16 autocast, which the project evaluator uses, moves that executed action by at most 0.0025. Executing all 50 predicted actions is the lowest of the rates above, 30/100. The trainer default remains one executed action. A 95% Wilson interval for the native 53/100 sample contains the published 0.60. The interval for the native 46/100 sample does not. Those intervals describe this episode sample. They do not identify the unpublished leaderboard job.
 
 ## Project Title
 
@@ -42,7 +55,7 @@ This project studies reinforcement-learning post-training as a way to improve bo
 
 The planned comparison uses three policy configurations on LIBERO:
 
-- **Pretrained supervised SmolVLA without RL.** Load `HuggingFaceVLA/smolvla_libero` and evaluate with deterministic integration (`mode="eval"` in `src/flow_sde.py`). No reinforcement-learning update. One episode has been run. A success rate has not.
+- **Pretrained supervised SmolVLA without RL.** Load `HuggingFaceVLA/smolvla_libero` and evaluate with deterministic integration (`mode="eval"` in `src/flow_sde.py`). No reinforcement-learning update. A 10-episode LIBERO-Long rate has been measured with the native LeRobot evaluator and is reported in [docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md).
 - **Nominal PPO post-training.** The same initialization, then the upstream trainer (`src/train_flow_rl.py`) on unperturbed LIBERO tasks. A 20-update pilot on one task has been run. It collected reward. It did not establish a gain in success.
 - **Perturbation-aware PPO post-training.** The same initialization, then PPO while training episodes include the perturbations below. Not implemented. The upstream rollout has no perturbation hook.
 
@@ -68,7 +81,7 @@ Evaluation of the three configurations is planned. The intended protocol is:
 - **Seen perturbations.** Success under perturbations that perturbation-aware training was allowed to use.
 - **Unseen perturbations.** Success under held-out perturbations.
 
-Reported quantities, once the robustness experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. The numbers recorded so far are the execution checks in the two reports linked above. They are not those robustness results. The upstream README does not report success rates either.
+Reported quantities, once the robustness experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. The numbers recorded so far are the execution checks and the pretrained LIBERO-Long rates in the three reports linked above. They are not those robustness results. The upstream README does not report success rates either.
 
 The upstream scoring entry point is `src/eval_cli.py`. It refuses a success rate until `src/completeness_gate.py` accepts the log, and it refuses a budget longer than the horizon that was actually run. `scripts/run_gates.sh` is the upstream mechanical check. It is not the robustness protocol above. On the `smolvla-flow-rl` environment it has been run, including the invariant file, and it passed. That pass is a software check. It is not a LIBERO result.
 
@@ -141,6 +154,7 @@ These need dependencies or hardware this job does not install. None of them has 
 
 - [x] Adopt `smolvla_flow_rl` as the training history (`flow-rl`, tag `flow-rl-baseline`)
 - [x] Pretrained inference on one LIBERO episode, and a ten-task screen that is not a success rate
+- [x] Pretrained baseline validation: native LeRobot 0.4.4 versus Flow RL on LIBERO-Long, including action parity and execution horizons ([docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md))
 - [x] One PPO update on one LIBERO task, with peak memory recorded
 - [x] A 20-update nominal pilot that collects sparse reward and does not establish learning
 - [ ] A matched evaluation large enough to say whether PPO changed success
