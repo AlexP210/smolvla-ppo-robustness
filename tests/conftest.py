@@ -73,13 +73,13 @@ def restore_torch_backend_flags() -> Iterator[None]:
         torch.backends.cudnn.allow_tf32 = cudnn_tf32
 
 
-# Marks selecting the tests of each Fast Tests tier (`-m dataset`, see .github/workflows/fast_tests.yml);
+# Marks selecting the tests of each Fast Tests tier (`-m dataset`, see .github/upstream-workflows/fast_tests.yml);
 # every other test is marked `base`. Marks only select tests: skipping when an extra is missing is still
 # done by `pytest.importorskip` and friends.
 TIER_MARKS = ("dataset", "hardware", "viz")
 
 
-# The GPU Tests job (`-m gpu`, see .github/workflows/full_tests.yml) only runs tests marked `gpu`. The mark is added
+# The GPU Tests job (`-m gpu`, see .github/upstream-workflows/full_tests.yml) only runs tests marked `gpu`. The mark is added
 # to policy tests, `require_cuda` tests and tests skipped without CUDA; other tests that use CUDA mark themselves.
 # An unmarked test that skips for lack of CUDA fails instead, so it cannot silently miss the GPU job.
 POLICY_TESTS = Path(__file__).parent / "policies"

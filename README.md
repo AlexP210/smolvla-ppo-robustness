@@ -70,6 +70,31 @@ For headless LIBERO rendering, the LIBERO guide sets `MUJOCO_GL=egl` before trai
 
 There is no project command yet for PPO post-training, perturbation generation, or the robustness comparison.
 
+## Continuous Integration
+
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests targeting `main`, pushes to `main`, and manual runs. A newer commit cancels the older run for that branch or pull request.
+
+Syntax checks, Ruff lint, and Ruff format cover `src/` and `tests/robustness/`. Pytest runs only `tests/robustness/`. The job installs Ruff `0.14.1` (the version pinned in [`.pre-commit-config.yaml`](./.pre-commit-config.yaml)) and pytest in the range already declared by the `test` extra in `pyproject.toml`. Ruff reads the existing `[tool.ruff]` settings. The job does not install LeRobot, CUDA, simulators, or model checkpoints, and it does not use repository secrets.
+
+Run the same checks from the repository root with Python 3.12:
+
+```bash
+python -m pip install "ruff==0.14.1" "pytest>=8.1.0,<10.0.0"
+python -m compileall -q -f src tests/robustness
+ruff check src tests/robustness
+ruff format --check src tests/robustness
+python -m pytest tests/robustness --confcutdir=tests/robustness -q
+```
+
+`--confcutdir` keeps pytest from loading `conftest.py` files above `tests/robustness/`, including the repository root `conftest.py` and `tests/conftest.py`, both of which import LeRobot. Add future CPU unit tests under:
+
+- `tests/robustness/perturbations`
+- `tests/robustness/rollouts`
+- `tests/robustness/config`
+- `tests/robustness/evaluation`
+
+The original LeRobot workflows are unchanged and stored in [`.github/upstream-workflows/`](./.github/upstream-workflows/). GitHub Actions does not run that directory. The original tests under `tests/` are unchanged and are not part of this job.
+
 ## Development Roadmap
 
 - [ ] Baseline setup and feasibility study
@@ -91,6 +116,9 @@ Existing LeRobot directories used by this project:
 | `docs/source/smolvla.mdx`, `docs/source/libero.mdx` | Upstream SmolVLA and LIBERO instructions |
 | `src/lerobot/rl` | Upstream HIL-SERL actor-learner stack (SAC), not the planned PPO experiments |
 | `docs/`, `tests/`, `examples/`, `docker/`, `scripts/`, `benchmarks/` | Upstream documentation, tests, examples, and tooling |
+| `tests/robustness/` | Project CPU unit tests. Suites: `perturbations`, `rollouts`, `config`, `evaluation` |
+| `.github/workflows/ci.yml` | Active project CI |
+| `.github/upstream-workflows/` | Original LeRobot workflows, preserved and inactive |
 | `LICENSE` | Apache License 2.0, unchanged |
 | `README_LEROBOT.md` | Preserved upstream README |
 

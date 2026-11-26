@@ -1,0 +1,48 @@
+# Lightweight CI for the SmolVLA PPO robustness course project.
+# Inherited LeRobot workflows live in .github/upstream-workflows/ and do not run.
+
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+# Cancel an older run for the same branch or pull request when a newer commit arrives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  project-checks:
+    name: Syntax, lint, format, and CPU unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install lint and test tools
+        run: python -m pip install "ruff==0.14.1" "pytest>=8.1.0,<10.0.0"
+
+      # Syntax and Ruff cover inherited source plus project tests. Pytest stays on the project suite.
+      - name: Syntax, Ruff, and CPU unit tests
+        run: |
+          python -m compileall -q -f src tests/robustness
+          ruff check src tests/robustness
+          ruff format --check src tests/robustness
+          python -m pytest tests/robustness --confcutdir=tests/robustness -q
