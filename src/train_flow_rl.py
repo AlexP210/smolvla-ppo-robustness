@@ -47,6 +47,8 @@ from env_libero import build_env, get_task_prompts, set_initial_states  # noqa: 
 from env_processors import make_processors  # noqa: E402
 from gae import compute_gae, normalize_advantages  # noqa: E402
 from model_setup import build_model, build_optimizer  # noqa: E402
+from ppo_diagnostics import (aggregate_optimizer_steps, distribution,  # noqa: E402
+                              explained_variance, reward_report)
 from ppo_step import ppo_step_stored, reference_is_available  # noqa: E402
 from rollout import collect_rollout  # noqa: E402
 from tripwire import TRIPPED_EXIT_CODE, Tripwire  # noqa: E402
@@ -540,11 +542,18 @@ def main(argv=None):
         adv, returns = compute_gae(buf["rewards"].to(device), buf["values"].to(device),
                                    buf["dones"].to(device), buf["bootstrap"].to(device),
                                    gamma=args.gamma, lam_gae=args.gae_lambda)
+        advantage_before = distribution(adv)
         adv = normalize_advantages(adv)
+        advantage_after = distribution(adv)
+        reward_stats = reward_report(buf["rewards"])
+        value_stats = distribution(buf["values"])
+        return_stats = distribution(returns)
+        critic_fit = explained_variance(buf["values"], returns)
 
         # One stored timestep per optimiser step. The observation the update re evaluates against belongs to a
         # single timestep, so a wider slice would pair one observation with several timesteps' trajectories.
         last = {}
+        step_records = []
         stepped = skipped = 0
         for _epoch in range(args.epochs):
             for t in range(args.rollout_steps):
@@ -558,6 +567,7 @@ def main(argv=None):
                     clip_range=args.clip_range, value_coef=args.value_coef, kl_coef=args.kl_coef,
                     grad_clip_norm=args.grad_clip, kl_anchor=args.kl_coef != 0.0,
                     n_action_steps=args.action_steps)
+                step_records.append(last)
 
                 if last.get("step_skipped"):
                     skipped += 1
@@ -585,13 +595,29 @@ def main(argv=None):
         # tell a run that used a different one, and would draw the band in the wrong place without saying so.
         record = {"cycle": cycle, "seconds": round(time.time() - t0, 1),
                   "clip_range": args.clip_range, "updates_stepped": stepped, "updates_skipped": skipped,
-                  "reward_mean": float(buf["rewards"].mean()), **last}
+                  "reward_mean": float(buf["rewards"].mean()), **last,
+                  "diagnostics": {
+                      "advantage_before_normalization": advantage_before,
+                      "advantage_after_normalization": advantage_after,
+                      "reward": reward_stats,
+                      "stored_values": value_stats,
+                      "returns": return_stats,
+                      "explained_variance": critic_fit,
+                      "optimizer_steps": aggregate_optimizer_steps(step_records),
+                  }}
         with open(metrics_path, "a") as fh:
             fh.write(json.dumps(record) + "\n")
         print("  cycle %d/%d  ratio %.3f  clip %.3f  grad %.2f  reward %.4f"
               % (cycle, args.updates, last.get("ratio_mean", float("nan")),
                  last.get("clip_frac", float("nan")), last.get("grad_norm", float("nan")),
                  record["reward_mean"]), flush=True)
+        pooled = record["diagnostics"]["optimizer_steps"]
+        fit = record["diagnostics"]["explained_variance"]
+        print("  cycle %d diagnostics  successes %d  approx_kl %s  clip_mean %s  explained_var %s"
+              % (cycle, reward_stats["success_decisions"],
+                 "nan" if pooled["approx_kl_mean"] is None else "%.4f" % pooled["approx_kl_mean"],
+                 "nan" if pooled["clip_frac_mean"] is None else "%.3f" % pooled["clip_frac_mean"],
+                 "nan" if fit is None else "%.3f" % fit), flush=True)
 
         # A cycle in which the non finite guard dropped every update trained on nothing. Left alone the run
         # continues, reaches the end, prints success and saves a checkpoint no gradient ever touched, which is not

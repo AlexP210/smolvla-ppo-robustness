@@ -161,7 +161,7 @@ The remaining items are the three workstreams in [docs/PROJECT_PLAN.md](./docs/P
 
 Workstream A, RL post-training:
 
-- [ ] PPO training diagnostics that do not change the loss
+- [x] PPO training diagnostics that do not change the loss ([docs/PPO_DIAGNOSTICS.md](./docs/PPO_DIAGNOSTICS.md))
 - [ ] Reward and advantage analysis
 - [ ] Nominal PPO learning experiments
 - [ ] Hyperparameter selection and a reproducible training configuration
@@ -204,6 +204,9 @@ Workstream C, robustness evaluation:
 | `NOTICE`, `LICENSE`, `THIRD_PARTY_LICENSES/`, `CHANGES_FROM_UPSTREAM.md` | Apache-2.0, attribution, and the record of what was adapted |
 | `README_UPSTREAM.md` | Preserved upstream README |
 | `docs/PROJECT_PLAN.md` | Contract for the three parallel workstreams |
+| `docs/PPO_DIAGNOSTICS.md` | Cycle-wide PPO logs. The loss and the optimizer are unchanged |
+| `src/ppo_diagnostics.py` | Detached summaries of advantages, rewards, values, and optimizer steps |
+| `tests/test_ppo_diagnostics.py` | CPU checks for those summaries |
 | `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
 | `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
 | `docs/PRETRAINED_BASELINE_VALIDATION.md` | Native LeRobot evaluation of the pretrained checkpoint, and the horizon comparison |
