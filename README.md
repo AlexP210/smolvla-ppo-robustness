@@ -2,7 +2,7 @@
 
 This repository is a course research project on reinforcement-learning post-training for vision-language-action (VLA) policies. The training code is the history of [smolvla_flow_rl](https://github.com/mturan33/smolvla_flow_rl) (Mehmet Turan Yardimci). The upstream README is preserved, unmodified, in [README_UPSTREAM.md](./README_UPSTREAM.md). The tag `flow-rl-baseline` is that upstream commit, `c161af2100610cf9f411bce23ad57180eb771d44`, before the documentation and CI added for this project.
 
-The previous LeRobot 0.7.1 line is not in this branch. It is preserved at the same commit on `archive/lerobot-0.7.1` and `archive/lerobot-main`. The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
+The previous LeRobot 0.7.1 line is not in this branch. It is `archive/lerobot-0.7.1`, the same commit as GitHub's current `main` (`462e4571`). The tag `original-baseline` (`b07adcc5e3ce42c26a248236dbb3571f84c28c43`) marks the LeRobot commit that line started from. The two histories are not merged.
 
 A passing CI check is not evidence that training works. The measurements that do exist are separated below. Robustness perturbations are still not implemented.
 
@@ -118,7 +118,7 @@ Perturbation generation and the robustness comparison are specified in [docs/PRO
 
 ## Repository branches
 
-`main` is the default branch. It is this `smolvla_flow_rl` history, renamed from `flow-rl`. The LeRobot 0.7.1 history is not on `main`. The previous default branch was renamed to `archive/lerobot-main`, and `archive/lerobot-0.7.1` points at the same commit (`462e4571`). Do not merge those branches into `main`, and do not force-push `main`. Feature branches open pull requests against `main`.
+The research branch is `flow-rl`. Pull requests for this project target `flow-rl`. GitHub's default branch is still `main`, the LeRobot 0.7.1 history, at the same commit as `archive/lerobot-0.7.1` (`462e4571`). Renaming `flow-rl` to `main` is a later admin step. It is not done. Do not merge `main` or `archive/lerobot-0.7.1` into `flow-rl`, and do not force-push.
 
 Remotes:
 
@@ -130,7 +130,7 @@ Remotes:
 
 ## Continuous Integration
 
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `main`, and on manual runs. A newer commit cancels the older run for that branch or pull request. The job installs no packages. It runs the two upstream gates that need only the Python 3.10 standard library:
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs on pull requests and pushes to `flow-rl` and to `main`, and on manual runs. A newer commit cancels the older run for that branch or pull request. The job installs no packages. It runs the two upstream gates that need only the Python 3.10 standard library:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python scripts/check_syntax.py
@@ -152,19 +152,31 @@ These need dependencies or hardware this job does not install. None of them has 
 
 ## Development Roadmap
 
-- [x] Adopt `smolvla_flow_rl` as the training history (`main`, formerly `flow-rl`; tag `flow-rl-baseline`)
+Completed work is on `flow-rl`. Ongoing work is the uncommitted tree on `feature/a-nominal-rl` and is not merged. Pending work has not been started. The contract for the three workstreams is [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md).
+
+### Completed, on `flow-rl`
+
+- [x] Adopt `smolvla_flow_rl` as the training history (`flow-rl`, tag `flow-rl-baseline`)
 - [x] Pretrained inference on one LIBERO episode, and a ten-task screen that is not a success rate
 - [x] Pretrained baseline validation: native LeRobot 0.4.4 versus Flow RL on LIBERO-Long, including action parity and execution horizons ([docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md))
 - [x] One PPO update on one LIBERO task, with peak memory recorded
-- [x] A 20-update nominal pilot that collects sparse reward and does not establish learning
-The remaining items are the three workstreams in [docs/PROJECT_PLAN.md](./docs/PROJECT_PLAN.md). They can proceed in parallel. PPO diagnostics and the separate evaluation seeds are implemented. The other items are not.
-
-Workstream A, RL post-training:
-
+- [x] A 20-update nominal pilot that collects sparse reward and does not establish learning ([docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md))
 - [x] PPO training diagnostics that do not change the loss ([docs/PPO_DIAGNOSTICS.md](./docs/PPO_DIAGNOSTICS.md))
-- [ ] Reward and advantage analysis
+- [x] Reproducible environment and policy sampling ([docs/REPRODUCIBLE_EVAL.md](./docs/REPRODUCIBLE_EVAL.md))
+
+### Ongoing, not merged
+
+`feature/a-nominal-rl` holds uncommitted work toward the nominal learning run and the fixed nominal scenarios. That draft includes a scenario loader, two training configs, and a reproduction note. The ten-episode paired comparison in the note has empty result cells, and the moderate-task config was not launched. Those files stay uncommitted until that comparison is filled in.
+
 - [ ] Nominal PPO learning experiments
-- [ ] Hyperparameter selection and a reproducible training configuration
+- [ ] A checked-in hyperparameter file for a finished learning run
+- [ ] Fixed nominal evaluation scenarios, and the ten-episode paired comparison
+
+### Pending
+
+Workstream A:
+
+- [ ] Reward and advantage analysis
 
 Workstream B, perturbation framework:
 
@@ -174,13 +186,10 @@ Workstream B, perturbation framework:
 - [ ] Reproducible perturbation sampling
 - [ ] One integration hook for training and evaluation
 
-Workstream C, robustness evaluation:
+Workstream C, beyond the seeds already on `flow-rl`:
 
-- [x] Reproducible environment and policy sampling ([docs/REPRODUCIBLE_EVAL.md](./docs/REPRODUCIBLE_EVAL.md))
-- [ ] Fixed evaluation scenarios
-- [ ] Nominal, seen, unseen, and severity-based evaluation
+- [ ] Seen, unseen, and severity-based evaluation
 - [ ] Per-task metrics and robustness curves
-- [ ] Paired comparisons of a pretrained and a post-trained policy
 
 - [ ] Perturbation-aware PPO, after A and B have both landed
 - [ ] Generalization and failure analysis
