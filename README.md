@@ -1,201 +1,111 @@
-<p align="center">
-  <img alt="LeRobot, Hugging Face Robotics Library" src="./media/readme/lerobot-logo-thumbnail.png" width="100%">
-</p>
+# Robustness of Vision-Language-Action Models through Reinforcement Learning Post-Training
 
-<div align="center">
+This repository is a course research project on reinforcement-learning post-training for vision-language-action (VLA) policies. It builds on [LeRobot](https://github.com/huggingface/lerobot) (Hugging Face). The upstream project documentation is preserved, unmodified, in [README_LEROBOT.md](./README_LEROBOT.md). The commit tagged `original-baseline` is the LeRobot revision this project started from, before these documentation changes.
 
-[![Tests](https://github.com/huggingface/lerobot/actions/workflows/latest_deps_tests.yml/badge.svg?branch=main)](https://github.com/huggingface/lerobot/actions/workflows/latest_deps_tests.yml?query=branch%3Amain)
-[![Tests](https://github.com/huggingface/lerobot/actions/workflows/docker_publish.yml/badge.svg?branch=main)](https://github.com/huggingface/lerobot/actions/workflows/docker_publish.yml?query=branch%3Amain)
-[![Python versions](https://img.shields.io/pypi/pyversions/lerobot)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/huggingface/lerobot/blob/main/LICENSE)
-[![Status](https://img.shields.io/pypi/status/lerobot)](https://pypi.org/project/lerobot/)
-[![Version](https://img.shields.io/pypi/v/lerobot)](https://pypi.org/project/lerobot/)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.1-ff69b4.svg)](https://github.com/huggingface/lerobot/blob/main/CODE_OF_CONDUCT.md)
-[![Discord](https://img.shields.io/badge/Discord-Join_Us-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/s3KuuzsPFb)
+No robustness experiments have been run in this project yet. Sections below separate functionality that already exists in LeRobot from work that is planned.
 
-</div>
+## Project Title
 
-**LeRobot** aims to provide models, datasets, and tools for real-world robotics in PyTorch. The goal is to lower the barrier to entry so that everyone can contribute to and benefit from shared datasets and pretrained models.
+Robustness of Vision-Language-Action Models through Reinforcement Learning Post-Training
 
-🤗 A hardware-agnostic, Python-native interface that standardizes control across diverse platforms, from low-cost arms (SO-100) to humanoids.
+## Overview
 
-🤗 A standardized, scalable LeRobotDataset format (Parquet + MP4 or images) hosted on the Hugging Face Hub, enabling efficient storage, streaming and visualization of massive robotic datasets.
+Supervised VLA policies imitate demonstration data. A policy that succeeds on the nominal training distribution can still fail when appearance, object placement, or physical conditions shift. Task success on the original distribution does not, by itself, measure that sensitivity.
 
-🤗 State-of-the-art policies that have been shown to transfer to the real-world ready for training and deployment.
+This project studies reinforcement-learning post-training as a way to improve both nominal task performance and robustness under those shifts. The intended testbed is the pretrained [SmolVLA](https://arxiv.org/abs/2506.01844) policy in simulation on [LIBERO](https://arxiv.org/abs/2306.03310). Proximal Policy Optimization (PPO) is the planned post-training algorithm. That study has not been implemented in this repository yet.
 
-🤗 Comprehensive support for the open-source ecosystem to democratize physical AI.
+## Research Questions
 
-## Quick Start
+- Does nominal RL post-training improve robustness beyond nominal task success?
+- Does exposure to perturbations during RL training improve robustness?
+- Do robustness improvements generalize to unseen perturbations?
+- What are the trade-offs between nominal performance, robustness, and learning efficiency?
 
-LeRobot can be installed directly from PyPI.
+## Methodology
 
-```bash
-pip install lerobot
-lerobot-info
-```
+The planned comparison uses three policy configurations on LIBERO:
 
-The base install is lightweight. Add the extras you need, for example `pip install 'lerobot[dataset]'` to load datasets, `'lerobot[training]'` to train policies, or `'lerobot[core_scripts,feetech]'` to record with an SO-101 arm.
+- **Pretrained supervised SmolVLA without RL.** The SmolVLA policy already in LeRobot, loaded from a supervised checkpoint and evaluated with no reinforcement-learning update.
+- **Nominal PPO post-training.** The same SmolVLA initialization, then PPO on unperturbed LIBERO tasks. Planned; there is no PPO trainer in this repository.
+- **Perturbation-aware PPO post-training.** The same initialization, then PPO while training episodes include the perturbations described below. Planned; there is no perturbation-aware trainer in this repository.
 
-> [!IMPORTANT]
-> For detailed installation guide, please see the [Installation Documentation](https://huggingface.co/docs/lerobot/installation).
+SmolVLA is implemented under `src/lerobot/policies/smolvla`, with upstream instructions in [docs/source/smolvla.mdx](./docs/source/smolvla.mdx). LIBERO is integrated under `src/lerobot/sim/integrations/libero.py`, with upstream instructions in [docs/source/libero.mdx](./docs/source/libero.mdx).
 
-## Robots & Control
+LeRobot's existing reinforcement-learning code is a separate stack. `src/lerobot/rl` implements Soft Actor-Critic for the HIL-SERL workflow ([docs/source/hilserl.mdx](./docs/source/hilserl.mdx)). TD-MPC is a separate policy ([docs/source/policy_tdmpc_README.md](./docs/source/policy_tdmpc_README.md)). Neither is the PPO post-training method planned here.
 
-<div align="center">
-  <img src="./media/readme/robots_control_video.webp" width="640px" alt="Reachy 2 Demo">
-</div>
+## Environment Perturbations
 
-LeRobot provides a unified `Robot` class interface that decouples control logic from hardware specifics. It supports a wide range of robots and teleoperation devices.
+Perturbations are planned and are not implemented. The intended families are:
 
-```python
-from lerobot.robots.myrobot import MyRobot
+- **Visual.** Changes to appearance, such as color, texture, or lighting. Appearance changes are a first priority.
+- **Spatial.** Changes to the initial object position. Initial-position changes are a first priority.
+- **Physical.** Changes to dynamics or object properties. These are in scope after the appearance and initial-position perturbations.
 
-# Connect to a robot
-robot = MyRobot(config=...)
-robot.connect()
+Each family is meant to be split later into perturbations used during training ("seen") and perturbations held out for testing ("unseen"). The specific parameter ranges are not fixed yet.
 
-# Read observation and send action
-obs = robot.get_observation()
-action = model.select_action(obs)
-robot.send_action(action)
-```
+## Evaluation
 
-**Supported Hardware:** SO101, OpenARM, LeKiwi, Unitree G1, reBot B601, Koch, HopeJR, OMX, EarthRover, Reachy2, Gamepads, Keyboards, Phones and more.
+Evaluation of the three configurations is planned. The intended protocol is:
 
-While these devices are natively integrated into the LeRobot codebase, the library is designed to be extensible. You can easily implement the Robot interface to utilize LeRobot's data collection, training, and visualization tools for your own custom robot.
+- **Nominal.** Success on unperturbed LIBERO tasks.
+- **Seen perturbations.** Success under perturbations that perturbation-aware training was allowed to use.
+- **Unseen perturbations.** Success under held-out perturbations.
 
-For detailed hardware setup guides, see the [Hardware Documentation](https://huggingface.co/docs/lerobot/integrate_hardware).
+Reported quantities, once experiments exist, will be task success rate, robustness degradation relative to the nominal evaluation, learning curves, and training efficiency. This README does not report any of those numbers.
 
-## LeRobot Dataset
+LeRobot already evaluates a policy on LIBERO with `lerobot-eval` and reports per-task success rates, including a 95% Wilson interval (`pc_success_ci95`). That entry point is documented in [docs/source/libero.mdx](./docs/source/libero.mdx). It does not apply the perturbation protocol above.
 
-To solve the data fragmentation problem in robotics, we utilize the **LeRobotDataset** format.
+## Installation and Getting Started
 
-- **Structure:** Synchronized MP4 videos (or images) for vision and Parquet files for state/action data.
-- **HF Hub Integration:** Explore thousands of robotics datasets on the [Hugging Face Hub](https://huggingface.co/lerobot).
-- **Tools:** Seamlessly delete episodes, split by indices/fractions, add/remove features, and merge multiple datasets.
+General installation, hardware setup, and dataset tools are documented in the preserved upstream guide, [README_LEROBOT.md](./README_LEROBOT.md), and in the [LeRobot installation documentation](https://huggingface.co/docs/lerobot/installation). This tree requires Python >= 3.12 (`pyproject.toml`).
 
-```python
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-# Load a dataset from the Hub
-dataset = LeRobotDataset("lerobot/aloha_mobile_cabinet")
-
-# Access data (automatically handles video decoding)
-episode_index=0
-print(f"{dataset[episode_index]['action'].shape=}\n")
-```
-
-Learn more about it in the [LeRobotDataset Documentation](https://huggingface.co/docs/lerobot/lerobot-dataset-v3).
-
-## SoTA Models
-
-LeRobot implements state-of-the-art policies in pure PyTorch, covering Imitation Learning, Reinforcement Learning, Vision-Language-Action (VLA) models, World Models, and Reward Models, with more coming soon. It also provides you with the tools to instrument and inspect your training process.
-
-<p align="center">
-  <img alt="Gr00t Architecture" src="./media/readme/VLA_architecture.jpg" width="640px">
-</p>
-
-Training a policy is as simple as running a script configuration:
+Project-relevant extras that this repository already defines:
 
 ```bash
-lerobot-train \
-  --policy.type=act \
-  --dataset.repo_id=lerobot/aloha_mobile_cabinet \
-  --policy.push_to_hub=false
+pip install -e ".[smolvla]"   # docs/source/smolvla.mdx
+pip install -e ".[libero]"    # docs/source/libero.mdx; Linux only
 ```
 
-| Category                   | Models                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Imitation Learning**     | [ACT](./docs/source/policy_act_README.md), [Diffusion](./docs/source/policy_diffusion_README.md), [VQ-BeT](./docs/source/policy_vqbet_README.md), [Multitask DiT Policy](./docs/source/policy_multi_task_dit_README.md)                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Reinforcement Learning** | [HIL-SERL](./docs/source/hilserl.mdx), [TDMPC](./docs/source/policy_tdmpc_README.md) & QC-FQL (coming soon)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **VLAs Models**            | [Pi0](./docs/source/pi0.mdx), [Pi0Fast](./docs/source/pi0fast.mdx), [Pi0.5](./docs/source/pi05.mdx), [OpenGalaxea G0.5](./docs/source/g05.mdx), [FineART-VLA](./docs/source/fineart_vla.mdx), [GR00T N1.7](./docs/source/policy_groot_README.md), [SmolVLA](./docs/source/policy_smolvla_README.md), [XVLA](./docs/source/xvla.mdx), [EO-1](./docs/source/eo1.mdx), [MolmoAct2](./docs/source/molmoact2.mdx), [LingBot-VLA 2.0](./docs/source/lingbot_vla_v2.mdx), [WALL-OSS](./docs/source/walloss.mdx), [Wall-OSS-0.5](./docs/source/wall_oss_05.mdx), [EVO1](./docs/source/evo1.mdx), [DM05](./docs/source/dm05.mdx) |
-| **World Models**           | [VLA-JEPA](./docs/source/vla_jepa.mdx), [LingBot-VA](./docs/source/lingbot_va.mdx), [FastWAM](./docs/source/fastwam.mdx), [Long-WAM](./docs/source/longwam.mdx), [LaWAM](./docs/source/lawam.mdx), [FLUX 3 Action](./docs/source/flux3.mdx), [Cosmos3](./docs/source/cosmos3.mdx), [Praxis-1](./docs/source/praxis.mdx)                                                                                                                                                                                                                                                                                                 |
-| **Reward Models**          | [SARM](./docs/source/sarm.mdx), [TOPReward](./docs/source/topreward.mdx), [Robometer](./docs/source/robometer.mdx)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+For headless LIBERO rendering, the LIBERO guide sets `MUJOCO_GL=egl` before training or evaluation. Supervised SmolVLA fine-tuning uses `lerobot-train`. The SmolVLA and LIBERO guides above give the working commands, including a SmolVLA training example on the `lerobot/libero` dataset. `lerobot-train --help` lists the trainer options. Nominal LIBERO evaluation uses `lerobot-eval`; the suite names and flags are in [docs/source/libero.mdx](./docs/source/libero.mdx).
 
-Similarly to the hardware, you can easily implement your own policy & leverage LeRobot's data collection, training, and visualization tools, and share your model to the HF Hub.
+There is no project command yet for PPO post-training, perturbation generation, or the robustness comparison.
 
-For detailed policy setup guides, see the [Policy Documentation](https://huggingface.co/docs/lerobot/bring_your_own_policies). For GPU/RAM requirements and expected training time per policy, see the [Compute Hardware Guide](https://huggingface.co/docs/lerobot/hardware_guide).
+## Development Roadmap
 
-## Inference & Evaluation
+- [ ] Baseline setup and feasibility study
+- [ ] Nominal policy evaluation
+- [ ] Perturbation framework
+- [ ] Robustness evaluation
+- [ ] Nominal PPO post-training
+- [ ] Perturbation-aware PPO post-training
+- [ ] Generalization and failure analysis
 
-Evaluate your policies in simulation with `lerobot-eval`. LeRobot supports standard benchmarks like **LIBERO**, **MetaWorld** and more to come. To run a trained policy on a real robot, use `lerobot-rollout` (see the [Policy Deployment Documentation](https://huggingface.co/docs/lerobot/inference)).
+## Repository Structure
 
-```bash
-# Evaluate a policy on the LIBERO benchmark
-lerobot-eval \
-  --policy.path=lerobot/pi0_libero_finetuned \
-  --env.type=libero \
-  --env.task=libero_object \
-  --eval.n_episodes=10
-```
+Existing LeRobot directories used by this project:
 
-Learn how to implement your own simulation environment or benchmark and distribute it from the HF Hub by following the [EnvHub Documentation](https://huggingface.co/docs/lerobot/envhub).
+| Path | Role in this project |
+| --- | --- |
+| `src/lerobot/policies/smolvla` | SmolVLA policy implementation |
+| `src/lerobot/sim` | Simulator integrations, including LIBERO (`integrations/libero.py`) |
+| `docs/source/smolvla.mdx`, `docs/source/libero.mdx` | Upstream SmolVLA and LIBERO instructions |
+| `src/lerobot/rl` | Upstream HIL-SERL actor-learner stack (SAC), not the planned PPO experiments |
+| `docs/`, `tests/`, `examples/`, `docker/`, `scripts/`, `benchmarks/` | Upstream documentation, tests, examples, and tooling |
+| `LICENSE` | Apache License 2.0, unchanged |
+| `README_LEROBOT.md` | Preserved upstream README |
 
-### Third-Party Hardware
+`README_LEROBOT.md` remains at the repository root, so its relative links to `./docs/` and `./media/` still resolve. `setup.py` and `pyproject.toml` (`dynamic = ["readme"]`) read the root `README.md` path. That path is this project README. `scripts/ci/benchmark_matrix.py` also hashes `README.md` when fingerprinting simulator images.
 
-Beyond the natively supported hardware, the community maintains a growing ecosystem of plugins for other robots, teleoperators, cameras, and sensors - UFACTORY xArm, Universal Robots UR5e, Franka, AgileX Piper, Trossen WidowX, ARX5, I2RT YAM, GELLO, SpaceMouse, Meta Quest, ROS 2 bridges, tactile and depth cameras, and more.
+Planned project components, which are not in the tree yet: a perturbation framework, PPO post-training for the nominal and perturbation-aware configurations, and the robustness evaluation that compares nominal, seen, and unseen conditions.
 
-Plugins are auto-discovered by package name: LeRobot imports any installed package prefixed with `lerobot_robot_`, `lerobot_teleoperator_`, or `lerobot_camera_`. Install one and use the `type` it registers straight from the CLI:
+## Acknowledgments and License
 
-```bash
-pip install lerobot_robot_<name> lerobot_teleoperator_<name>
+This project builds upon LeRobot by Hugging Face: [github.com/huggingface/lerobot](https://github.com/huggingface/lerobot). Upstream documentation, copyright notices, and the license text are preserved. See [README_LEROBOT.md](./README_LEROBOT.md) and [LICENSE](./LICENSE).
 
-lerobot-record \
-  --robot.type=<robot_name> \
-  --teleop.type=<teleoperator_name> \
-  --dataset.repo_id=${HF_USER}/my-dataset
-```
+- **LeRobot.** Cadène et al., Hugging Face. <https://github.com/huggingface/lerobot>
+- **SmolVLA.** Shukor et al., "SmolVLA: A Vision-Language-Action Model for Affordable and Efficient Robotics," arXiv:2506.01844, 2025. Citation in [src/lerobot/policies/smolvla/README.md](./src/lerobot/policies/smolvla/README.md).
+- **LIBERO.** Liu et al., "LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning," arXiv:2306.03310, 2023. <https://github.com/Lifelong-Robot-Learning/LIBERO>
+- **PPO.** Schulman et al., "Proximal Policy Optimization Algorithms," arXiv:1707.06347, 2017. This is the planned post-training algorithm. It is not implemented in this repository.
+- **Existing RL code.** LeRobot's HIL-SERL implementation (SAC) in `src/lerobot/rl`, following Luo et al., and the TD-MPC policy. These are upstream algorithms already in the tree. They are not the PPO experiments planned above.
 
-Browse the full list in the [Third-Party Robots & Teleoperators](https://huggingface.co/docs/lerobot/main/third_party_robots) and [Third-Party Cameras & Sensors](https://huggingface.co/docs/lerobot/main/third_party_sensors) documentation.
-
-## Resources
-
-- **[Documentation](https://huggingface.co/docs/lerobot/index):** The complete guide to tutorials & API.
-- **[Chinese Tutorials: LeRobot+SO-ARM101中文教程-同济子豪兄](https://zihao-ai.feishu.cn/wiki/space/7589642043471924447)** Detailed doc for assembling, teleoperate, dataset, train, deploy. Verified by Seed Studio and 5 global hackathon players.
-- **[Discord](https://discord.gg/s3KuuzsPFb):** Join the `LeRobot` server to discuss with the community.
-- **[X](https://x.com/LeRobotHF):** Follow us on X to stay up-to-date with the latest developments.
-- **[Robot Learning Tutorial](https://huggingface.co/spaces/lerobot/robot-learning-tutorial):** A free, hands-on course to learn robot learning using LeRobot.
-- **[T-Shirt Folding Experiment](https://huggingface.co/spaces/lerobot/robot-folding):** An end-to-end demonstration of folding t-shirts with LeRobot.
-- **[LeLab](https://github.com/huggingface/leLab):** A web interface for LeRobot — teleoperate, calibrate, record datasets, replay, and train your SO arm from the browser, no CLI required.
-
-## Citation
-
-If you use LeRobot in your project, please cite the GitHub repository to acknowledge the ongoing development and contributors:
-
-```bibtex
-@misc{cadene2024lerobot,
-    author = {Cadene, Remi and Alibert, Simon and Soare, Alexander and Gallouedec, Quentin and Zouitine, Adil and Palma, Steven and Kooijmans, Pepijn and Aractingi, Michel and Shukor, Mustafa and Aubakirova, Dana and Russi, Martino and Capuano, Francesco and Pascal, Caroline and Choghari, Jade and Meftah, Khalil and Ellerbach, Maxime and Moss, Jess and Wolf, Thomas},
-    title = {LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch},
-    howpublished = "\url{https://github.com/huggingface/lerobot}",
-    year = {2024}
-}
-```
-
-If you are referencing our research or the academic paper, please also cite our ICLR publication:
-
-<details>
-<summary><b>ICLR 2026 Paper</b></summary>
-
-```bibtex
-@inproceedings{cadenelerobot,
-  title={LeRobot: An Open-Source Library for End-to-End Robot Learning},
-  author={Cadene, Remi and Alibert, Simon and Capuano, Francesco and Aractingi, Michel and Zouitine, Adil and Kooijmans, Pepijn and Choghari, Jade and Russi, Martino and Pascal, Caroline and Palma, Steven and Shukor, Mustafa and Moss, Jess and Soare, Alexander and Aubakirova, Dana and Lhoest, Quentin and Gallou\'edec, Quentin and Wolf, Thomas},
-  booktitle={The Fourteenth International Conference on Learning Representations},
-  year={2026},
-  url={https://arxiv.org/abs/2602.22818}
-}
-```
-
-</details>
-
-## Contribute
-
-We welcome contributions from everyone in the community! To get started, please read our [CONTRIBUTING.md](https://github.com/huggingface/lerobot/blob/main/CONTRIBUTING.md) guide. Whether you're adding a new feature, improving documentation, or fixing a bug, your help and feedback are invaluable. We're incredibly excited about the future of open-source robotics and can't wait to work with you on what's next—thank you for your support!
-
-<p align="center">
-  <img alt="SO101 Video" src="./media/readme/so100_video.webp" width="640px">
-</p>
-
-<div align="center">
-<sub>Built by the <a href="https://huggingface.co/lerobot">LeRobot</a> team at <a href="https://huggingface.co">Hugging Face</a> with ❤️</sub>
-</div>
+Copyright 2024 The Hugging Face team. All rights reserved. The original work and this repository are distributed under the Apache License, Version 2.0. See [LICENSE](./LICENSE).
