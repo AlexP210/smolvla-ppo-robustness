@@ -21,6 +21,8 @@ These four statements are different, and only the first three have been observed
 
 The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
 
+The 2/8 and 0/8 comparison did not pin the flow's starting noise. [docs/REPRODUCIBLE_EVAL.md](./docs/REPRODUCIBLE_EVAL.md) separates the simulator seed from the policy seed. With those arguments set, each episode id gets the same reset and the same standard-normal initial noise in any batch layout. Leaving them unset keeps the historical draw. The Euler step and the one-action execution horizon are unchanged.
+
 ## Project Title
 
 Robustness of Vision-Language-Action Models through Reinforcement Learning Post-Training
@@ -171,6 +173,8 @@ These need dependencies or hardware this job does not install. None of them has 
 | `docs/PROJECT_PLAN.md` | Technical plan for this course project |
 | `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
 | `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
+| `docs/REPRODUCIBLE_EVAL.md` | Separate environment and policy seeds for evaluation |
+| `src/eval_noise.py` | Reset seeds and batch-independent initial flow noise |
 | `scripts/baseline_reproduction.py` | Measurement harness for the baseline report |
 | `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint |
 | `.github/workflows/ci.yml` | Active project CI |

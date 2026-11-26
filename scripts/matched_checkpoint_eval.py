@@ -174,7 +174,9 @@ def _run_eval(model, output_dir: str, cycle: int) -> dict:
             model, ve, env_pre, env_post, prompts, tasks,
             episodes_per_task=EPISODES, seed=SEED, horizon=HORIZON,
             events_path=events, device=next(model.parameters()).device,
-            n_action_steps=ACTION_STEPS, cycle=cycle)
+            n_action_steps=ACTION_STEPS, cycle=cycle,
+            env_seed=SEED, policy_seed=SEED,
+            episode_ids=list(range(4)))
     finally:
         ve.close()
     rows = [json.loads(line) for line in open(events)]
@@ -202,7 +204,10 @@ def command_compare(args) -> None:
         "regime": "expert_full_vlm_lora",
         "adapter_rank": ADAPTER_RANK_DEFAULT,
         "adapter_alpha": ADAPTER_ALPHA_DEFAULT,
-        "note": "Same evaluate() call, four copies of libero_10 task 0. Initialization is the pretrained policy with zero-initialized adapters, which is what the 20 updates started from.",
+        "env_seed": SEED,
+        "policy_seed": SEED,
+        "episode_ids": [0, 1, 2, 3],
+        "note": "Same evaluate() call, four copies of libero_10 task 0, with a shared environment seed and a shared policy seed. Initialization is the pretrained policy with zero-initialized adapters.",
     }
     for label, checkpoint, cycle in (
             ("initialization", None, 0),

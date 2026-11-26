@@ -62,6 +62,10 @@ def parse_args(argv=None):
     p.add_argument("--episodes", type=int, required=True, help="episodes per task")
     p.add_argument("--horizon", type=int, required=True, help="environment steps per episode")
     p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--env_seed", type=int, default=None,
+                   help="simulator reset seed, separate from --seed; unset keeps the historical reset rule")
+    p.add_argument("--policy_seed", type=int, default=None,
+                   help="initial flow-noise seed, separate from the simulator; unset draws from the global generator")
     p.add_argument("--denoise_steps", type=int, required=True, help="integration steps of the flow policy")
     p.add_argument("--action_steps", type=int, default=1,
                    help="actions executed from one plan, must match how the run was trained")
@@ -220,7 +224,7 @@ def main(argv=None):
         evaluate(model, ve, env_pre, env_post, prompts, tasks,
                  episodes_per_task=args.episodes, seed=args.seed, horizon=args.horizon,
                  device=device, events_path=events_path, n_action_steps=args.action_steps,
-                 cycle=step)
+                 cycle=step, env_seed=args.env_seed, policy_seed=args.policy_seed)
     finally:
         ve.close()
 

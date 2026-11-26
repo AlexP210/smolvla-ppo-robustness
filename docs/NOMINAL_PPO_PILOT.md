@@ -161,7 +161,7 @@ Exit code 0. Loading `step_000020.pt` changed 491 tensors. Records are in `runs/
 | Initialization, cycle label 0 | 2/8 | 7001 at step 329, 7003 at step 390 |
 | `step_000020.pt` | 0/8 | none of 7000–7007 |
 
-Seed 7000 failed for both. This is the controlled sample the in-training evaluation was missing: the same evaluator, the same batch, and the same seeds, with an initialization that has not been through the 20 updates. In this sample the updated policy succeeded less often. Eight episodes, one task, and one training seed are not enough to conclude that PPO reduced success, and they do not show that it improved it.
+Seed 7000 failed for both. This is the controlled sample the in-training evaluation was missing: the same evaluator, the same batch, and the same seeds, with an initialization that has not been through the 20 updates. In this sample the updated policy succeeded less often. Eight episodes, one task, and one training seed are not enough to conclude that PPO reduced success, and they do not show that it improved it. Those episodes also did not pin the flow's starting noise. [REPRODUCIBLE_EVAL.md](./REPRODUCIBLE_EVAL.md) is the later mechanism for doing that. This comparison was not rerun under it.
 
 The in-training evaluation was also 0/8, but its random stream had already been consumed by training. It is not this comparison.
 
