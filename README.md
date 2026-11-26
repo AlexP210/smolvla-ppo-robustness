@@ -8,18 +8,18 @@ A passing CI check is not evidence that training works. The measurements that do
 
 ## What has been measured
 
-Reports: [docs/BASELINE_REPRODUCTION.md](./docs/BASELINE_REPRODUCTION.md) and [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md). The policy predicts 50 actions per call. Upstream training and evaluation execute one of them (`--action_steps 1`, and `n_action_steps` is 1 in the checkpoint). That horizon was not changed.
+Reports: [docs/BASELINE_REPRODUCTION.md](./docs/BASELINE_REPRODUCTION.md), [docs/NOMINAL_PPO_PILOT.md](./docs/NOMINAL_PPO_PILOT.md), and [docs/PRETRAINED_BASELINE_VALIDATION.md](./docs/PRETRAINED_BASELINE_VALIDATION.md). The policy predicts 50 actions per call. Upstream training and evaluation execute one of them (`--action_steps 1`, and `n_action_steps` is 1 in the checkpoint). That training default was not changed.
 
 These four statements are different, and only the first three have been observed:
 
 | Claim | Status |
 | --- | --- |
-| Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. That is one episode, not a success rate. |
+| Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. A later 10-episode evaluation of every LIBERO-Long task with the native LeRobot 0.4.4 evaluator scored 53/100 at the checkpoint's `n_action_steps=1` and 46/100 at `n_action_steps=10`. The leaderboard's Long column is 0.60. The details are in the validation report. |
 | PPO optimization runs | One stored-versus-recomputed update had ratio 1.0 before any parameter moved. Gradients reached the action expert, action head, and critic. Frozen parameters, including the vision tower, did not change. |
 | Multi-cycle training collects reward | Twenty upstream updates on four copies of task 0 finished. The first-step ratio was 1.0. Three collection windows each contained one sparse success. |
 | PPO improves task success | Not established. On the same eight seeds, the initialization succeeded twice and the checkpoint after 20 updates succeeded zero times. Eight episodes do not measure a change in success. |
 
-The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
+The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision. On one shared observation and one shared noise tensor, that float32 integration matches LeRobot's own sampler exactly. The validation report also runs horizons 1, 5, 10, 25, and 50 without making any of them the trainer default.
 
 ## Project Title
 
@@ -171,6 +171,8 @@ These need dependencies or hardware this job does not install. None of them has 
 | `docs/PROJECT_PLAN.md` | Technical plan for this course project |
 | `docs/BASELINE_REPRODUCTION.md` | Invariants, one deterministic episode, and one PPO update |
 | `docs/NOMINAL_PPO_PILOT.md` | Twenty-update nominal pilot, diagnostics, and the matched checkpoint comparison |
+| `docs/PRETRAINED_BASELINE_VALIDATION.md` | Native LeRobot evaluation of the pretrained checkpoint, and the horizon comparison |
+| `scripts/pretrained_baseline_validation.py` | Measurement harness for that validation |
 | `scripts/baseline_reproduction.py` | Measurement harness for the baseline report |
 | `scripts/matched_checkpoint_eval.py` | Same evaluator for the pretrained initialization and a saved checkpoint |
 | `.github/workflows/ci.yml` | Active project CI |
