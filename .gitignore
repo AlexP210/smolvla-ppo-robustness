@@ -11,9 +11,11 @@ __pycache__/
 *.onnx_data
 *.png
 *.mp4
+*.gif
 *.jsonl
 latest.txt
 TRIPWIRE_REASON.txt
 runs/
 outputs/
+checkpoints/
 .venv/
