@@ -17,7 +17,7 @@ These four statements are different, and only the first three have been observed
 | Pretrained inference runs | One deterministic `libero_10` task 0 episode succeeded, at environment step 369 of a 520-step cap. A 10-episode native LeRobot 0.4.4 evaluation of every LIBERO-Long task then scored 53/100 with one executed action and 46/100 with ten. Details are in the validation report. |
 | PPO optimization runs | One stored-versus-recomputed update had ratio 1.0 before any parameter moved. Gradients reached the action expert, action head, and critic. Frozen parameters, including the vision tower, did not change. |
 | Multi-cycle training collects reward | Twenty upstream updates on four copies of task 0 finished. The first-step ratio was 1.0. Three collection windows each contained one sparse success. |
-| PPO improves task success | Not established. On the ten-episode scenarios, the pretrained initialization succeeded on 14 of 40 episodes across tasks 0, 1, 2, and 9. The earlier 20-update checkpoint and a reproduction of that configuration each succeeded on 0 of 40. The zeros include the training task and three tasks the update did not train. That sample does not establish learning, and it does not establish catastrophic forgetting. The diagnostic reading is in the nominal-RL report. |
+| PPO improves task success | Not established. On the ten-episode scenarios, the pretrained initialization succeeded on 14 of 40 episodes across tasks 0, 1, 2, and 9. The actor learning rate 1e-5 checkpoints scored 0 of 40. An actor learning rate of 1e-6 scored 16 of 40, and a LoRA control scored 17 of 40, on the training task and on three tasks the update did not train. That sample does not establish learning, and it does not establish catastrophic forgetting. The diagnostic reading is in the nominal-RL report. |
 
 The upstream execution path is unchanged: each policy call is a new flow sample, and positions 1–49 of the chunk are discarded. Likelihood, reward, and GAE are computed per executed action, so with the default they see one simulator step per decision.
 
@@ -169,7 +169,7 @@ Completed work through the diagnostics and the evaluation seeds is on `flow-rl`.
 - [x] Reward and advantage analysis of the 20-update reproduction, from the training log ([docs/NOMINAL_RL_EXPERIMENTS.md](./docs/NOMINAL_RL_EXPERIMENTS.md))
 - [x] Controlled reproduction of the original configuration, and the ten-episode paired comparison. The initialization scores 14/40. Each 20-update checkpoint scores 0/40. That does not establish learning.
 - [x] Fixed nominal scenarios for task 0 and for tasks 1, 2, and 9, with the paired comparison of the pretrained initialization and both checkpoints
-- [ ] A checked-in hyperparameter file for a finished learning run. Three one-change configs are saved under `configs/ablations/` and were not launched. No recipe is selected.
+- [ ] A checked-in hyperparameter file for a finished learning run. The three one-change configs were run. Actor learning rate 1e-6 and the LoRA control are calmer than the original rate and score 16/40 and 17/40 on the same scenarios. The reference-KL file is refused before the first cycle. No recipe is selected ([docs/NOMINAL_RL_EXPERIMENTS.md](./docs/NOMINAL_RL_EXPERIMENTS.md)).
 - [ ] Moderate-task training on tasks 1, 2, and 9. `configs/nominal_ppo_libero10_moderate.json` is saved and was not launched.
 
 ### Pending
@@ -217,7 +217,7 @@ Workstream C, beyond the seeds and the nominal scenarios:
 | `docs/NOMINAL_RL_EXPERIMENTS.md` | Scenario comparison and the controlled reproduction of that pilot |
 | `configs/nominal_ppo_libero10_task0.json` | The reproduction's training configuration. `action_steps` is 1 |
 | `configs/nominal_ppo_libero10_moderate.json` | The same update on tasks 1, 2, and 9. Not launched |
-| `configs/ablations/` | One-change actor learning rate, reference KL, and LoRA configs. Not launched |
+| `configs/ablations/` | One-change actor learning rate, reference KL, and LoRA configs. The first and third were trained. The KL file is refused before cycle 0 |
 | `configs/scenarios/libero10_nominal.json` | Ten-episode task-0 scenario, perturbation off |
 | `configs/scenarios/libero10_moderate.json` | Ten-episode scenario for tasks 1, 2, and 9 |
 | `src/eval_scenario.py` | Loader for `eval_scenario_v1`, shared with the robustness workstream |

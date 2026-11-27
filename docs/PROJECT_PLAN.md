@@ -1,6 +1,6 @@
 # Project plan
 
-`origin/flow-rl` is the development branch. This plan was written against `3c357d62`. The baseline reproduction, the pretrained baseline validation, the PPO diagnostics, and the evaluation seeds are merged. The nominal reproduction and its ten-episode paired comparison are committed on `feature/a-nominal-rl` and are not yet merged. The moderate-task training config and the three one-change ablations on that branch were not launched. This file is the contract for the next parallel work. It does not implement that work.
+`origin/flow-rl` is the development branch. This plan was written against `3c357d62`. The baseline reproduction, the pretrained baseline validation, the PPO diagnostics, and the evaluation seeds are merged. The nominal reproduction, its ten-episode paired comparison, and the one-change stability pilots are committed on `feature/a-nominal-rl` and are not yet merged. The moderate-task training config on that branch was not launched. This file is the contract for the next parallel work. It does not implement that work.
 
 Completed measurements, which this plan does not reopen:
 
@@ -122,7 +122,7 @@ Nominal PPO only. Perturbation-aware training waits until B's hook is on `flow-r
 | `feature/a-nominal-learning` | One documented training run long enough to plot success against update, using the diagnostics from the first branch |
 | `feature/a-hparams` | A checked-in config file for that run, and a loader that refuses a file whose `action_steps` is not 1 |
 
-`feature/a-ppo-diagnostics` is on `flow-rl`. The analysis branch can be written against synthetic tensors in parallel. The learning run on `feature/a-nominal-rl` has a filled paired comparison and does not establish that PPO improved success. It is not merged into `flow-rl`. The hyperparameter file is accepted only when a later learning run uses it. The saved ablation configs on that branch were not launched.
+`feature/a-ppo-diagnostics` is on `flow-rl`. The analysis branch can be written against synthetic tensors in parallel. The learning run on `feature/a-nominal-rl` has a filled paired comparison and does not establish that PPO improved success. It is not merged into `flow-rl`. The hyperparameter file is accepted only when a later learning run uses it. The one-change stability pilots on that branch have been run. They do not select a learning recipe, and the moderate-task config was not launched.
 
 ### Files
 

@@ -28,6 +28,6 @@
   "perturbation": null,
   "control_arm": true,
   "control_reason": "Ablation: train the action expert through rank-8 adapters instead of the 99.40M full-rank surface. Not a full-rank fine-tune.",
-  "launched": false,
-  "note": "One change from the reproduction: regime lora, declared as a control. Not launched."
+  "launched": true,
+  "note": "One change from the reproduction: regime lora, declared as a control. A three-cycle pilot overrode updates and eval_every. The 20-update command used this file as written."
 }

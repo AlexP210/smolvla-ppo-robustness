@@ -26,6 +26,6 @@
   "ckpt_every": 20,
   "eval_scenario": "configs/scenarios/libero10_nominal.json",
   "perturbation": null,
-  "launched": false,
-  "note": "One change from the reproduction: kl_coef 0.01 turns on the existing reference anchor. The coefficient is a first scale, not a tuned value. Not launched."
+  "launched": true,
+  "note": "One change from the reproduction: kl_coef 0.01. Invoked. The trainer exits before cycle 0 because expert_full_vlm_lora trains the action expert in place."
 }

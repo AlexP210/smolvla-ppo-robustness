@@ -2,7 +2,7 @@
 
 This page is the first nominal-PPO learning pass after the diagnostics landed. It does not change the PPO loss, the Euler step, or the default of one executed action. Perturbations stay off. No learning-rate, clip, or noise sweep was launched.
 
-The question is whether the upstream update improves SmolVLA on LIBERO-Long. The controlled reproduction of the original 20-update configuration does not show that it does. The diagnostics say why a hyperparameter sweep would not be the next measurement.
+The question is whether the upstream update improves SmolVLA on LIBERO-Long. The controlled reproduction of the original 20-update configuration does not show that it does. The diagnostics from that run are why the next measurement was three one-change stability pilots, recorded below, rather than a sweep. The moderate-task training config is still not launched.
 
 ## What was reviewed before any new run
 
@@ -178,24 +178,148 @@ The eight-episode in-training sample of the reproduction file was also 0/8, on i
 
 On these 40 episodes the reproduction checkpoint has no successes, on task 0, which the update trained, and on tasks 1, 2, and 9, which the update did not train. The earlier checkpoint has the same 0/40 on the same scenarios, where the initialization has 14/40. Each column is one paired sample. The drop covers the training task and tasks excluded from the RL task list. It does not establish catastrophic forgetting, and it does not establish that PPO learned the training task.
 
-## Ablations that were saved and not launched
+## Stability pilots
 
-Each file changes one field of the reproduction and stays on four copies of task 0. None of them trains tasks 1, 2, and 9. `configs/nominal_ppo_libero10_moderate.json` is also not launched. The loss formula is the one already in `src/ppo_step.py`.
+Each file still changes one field of the reproduction and stays on four copies of task 0, seed 0, rollout 32, noise 0.1, and one executed action. The loss line is unchanged. `configs/nominal_ppo_libero10_moderate.json` was not launched. The three-cycle commands override `--updates` and `--eval_every` because the trainer refuses an evaluation schedule longer than the run, and it also refuses an `eval_scenario` whose schedule is switched off. The PPO hyperparameters in the files are otherwise the ones that ran. Output directories for the three-cycle pilots are separate from the 20-update directories, so the longer runs start from the pretrained initialization.
 
-| File | The one change | Why this one, from the log |
+| File | The one change | What ran |
 | --- | --- | --- |
-| `configs/ablations/actor_lr_1e-6.json` | Actor learning rate 1e-6 instead of 1e-5 | Every large gradient is clipped to norm 1, so the step size is the learning rate. Cycle 0 already reaches ratio 19. A smaller rate shrinks those 32 steps without a new update rule. |
-| `configs/ablations/kl_coef_0.01.json` | `kl_coef` 0.01 instead of 0 | The anchor term already exists and was off, which is why `kl_to_reference` is identically 0. 0.01 is a first scale, not a value selected by a sweep. |
-| `configs/ablations/regime_lora.json` | Regime `lora`, declared with `--control_arm` | The reproduction trains 99.40M parameters with no anchor. `lora` is the existing smaller surface. It is a control, not a full-rank run, and the trainer will say so. |
+| `configs/ablations/actor_lr_1e-6.json` | Actor learning rate 1e-6 | Three cycles, then 20 updates |
+| `configs/ablations/kl_coef_0.01.json` | `kl_coef` 0.01 | Invoked. The trainer exited before cycle 0 |
+| `configs/ablations/regime_lora.json` | Regime `lora`, with `--control_arm` | Three cycles, then 20 updates |
 
-Fewer optimizer steps per rollout is the other change the log suggests, and the trainer cannot express it. `epochs` is already 1, and the inner loop takes one step for every one of the 32 stored timesteps. A config that pretended to take fewer steps would not be the run it names. That change is not saved. The lower actor learning rate is the change that reduces the size of those 32 steps with the code as it is.
+```bash
+export PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1
+export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+CUDA_VISIBLE_DEVICES=1 python src/train_flow_rl.py \
+  --config configs/ablations/actor_lr_1e-6.json \
+  --updates 3 --eval_every 3 \
+  --output_dir runs/nominal_rl/ablate_actor_lr_u3
+
+CUDA_VISIBLE_DEVICES=2 python src/train_flow_rl.py \
+  --config configs/ablations/kl_coef_0.01.json \
+  --updates 3 --eval_every 3 \
+  --output_dir runs/nominal_rl/ablate_kl_u3
+
+CUDA_VISIBLE_DEVICES=0 python src/train_flow_rl.py \
+  --config configs/ablations/regime_lora.json \
+  --updates 3 --eval_every 3 \
+  --output_dir runs/nominal_rl/ablate_lora_u3
+```
+
+The 20-update commands are the files as written: actor learning rate on GPU 2, LoRA on GPU 1. Process GPU memory during the three-cycle runs was 3714 MiB for the full-rank actor-rate job and 2246 MiB for LoRA. The 20-update jobs load the same models. Wall times below are shared-machine times.
+
+### Three cycles against the reproduction
+
+The reproduction's first three cycles, from the table above, had mean approximate KL 1.98, 0.39, and 0.51, clip fractions 0.77, 0.52, and 0.58, and ratio maxima 19.2, 3.86, and 5.38. Both pilots that reached an update were calmer on that same window. The first-step ratio was 1.000000 in both. `kl_to_reference` stayed 0 because `kl_coef` stayed 0. No optimizer step was skipped. Advantages are the raw GAE values. After standardization the mean is 0 and the standard deviation is 1 on these cycles too.
+
+| Run | Cycle | Successes | Adv std | Value mean | Return mean | Expl. var | KL mean | KL max | Ratio min | Ratio max | Clip | Grad max | Seconds |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Actor 1e-6 | 0 | 0 | 0.046 | −0.411 | −0.411 | −0.23 | 0.033 | 0.24 | 0.31 | 2.02 | 0.26 | 688 | 31 |
+| Actor 1e-6 | 1 | 0 | 0.036 | −0.290 | −0.300 | 0.07 | 0.021 | 0.30 | 0.47 | 3.28 | 0.13 | 1127 | 29 |
+| Actor 1e-6 | 2 | 0 | 0.023 | −0.182 | −0.201 | 0.44 | 0.028 | 0.31 | 0.25 | 1.93 | 0.16 | 538 | 30 |
+| LoRA | 0 | 0 | 0.046 | −0.411 | −0.411 | −0.23 | 0.0046 | 0.049 | 0.58 | 1.28 | 0.047 | 37 | 49 |
+| LoRA | 1 | 0 | 0.036 | −0.254 | −0.275 | 0.24 | 0.0032 | 0.026 | 0.84 | 1.34 | 0.031 | 61 | 36 |
+| LoRA | 2 | 0 | 0.025 | −0.337 | −0.315 | 0.04 | 0.0042 | 0.036 | 0.74 | 1.54 | 0.078 | 57 | 40 |
+
+The actor-rate wall time for the whole three-cycle command, including its eight-episode sample, was 626 s. The LoRA command took 1121 s. Those eight-episode samples scored 4/8 and 2/8. They use the first two initial states and are not the ten-episode comparison.
+
+The lower rate still clips. Pre-clip gradient means on those three cycles were 161 to 201, and the applied norm stayed at 1. The smaller KL is the smaller step length after that clip. LoRA's pre-clip means were about 13 to 14, so the clip binds on the large steps and not on every step.
+
+### The reference anchor does not run on this surface
+
+`configs/ablations/kl_coef_0.01.json` keeps `expert_full_vlm_lora` and sets `kl_coef` to 0.01. The process exited 1 after about 20 s, with the manifest already printed at 99.40M trainable. The trainer's message is that this regime trains part of the policy in place, so switching adapters off does not recover the pretrained policy.
+
+That check is `reference_is_available`. It returns true only when every trainable parameter of the flow model is an adapter. In `expert_full_vlm_lora` the action expert body and the action head require gradients, so the check is false and the run stops before collection. The penalty that would have been added is `mean(ref_logp.detach() - new_logp)` on the executed action dimensions, with the reference taken by disabling adapters. Disabling adapters leaves an in-place change to the action expert where it is. The anchor therefore does not constrain the action-generating policy in the prepared file. The trainer refuses that configuration rather than allocating a second copy of the weights. A regime the same check would accept is `frozen` or `lora`, which would be a second change from the reproduction. That combination was not launched. `kl_to_reference` in the other pilots is 0 because their `kl_coef` is 0. It is still not the approximate KL.
+
+### What LoRA actually updates
+
+The LoRA manifest is 1.42M trainable of 606.35M: 1.11M under the action-expert name, 0 on the action head, 0 on backbone adapters, and 0.31M in the critic. The surface line says 0 of 96,696,800 of the expert's own parameters carry gradients. The 1.11M figure is the rank-8 adapters injected into the expert. Their names contain `lm_expert`, so the manifest counts them in that group. The run is declared a control.
+
+Comparing each checkpoint with a fresh initialization of the same regime:
+
+| Group | Actor 1e-6, 3 cycles | Actor 1e-6, 20 updates | LoRA, 3 cycles | LoRA, 20 updates |
+| --- | --- | --- | --- | --- |
+| Expert body, RMS of the change | 1.9e-6 | 4.8e-6 | 0 | 0 |
+| Expert adapters, RMS | none | none | 0.025 | 0.025 |
+| Language adapters, RMS | 0.020 | 0.020 | 0 | 0 |
+| Action head, RMS | 1.0e-5 | 2.8e-5 | 0 | 0 |
+| Critic, RMS | 0.113 | 0.113 | 0.113 | 0.113 |
+| Remaining weights | 0 | 0 | 0 | 0 |
+
+The largest absolute change in the expert body after 20 updates at 1e-6 is 1.3e-4. About 4.3 million of its 96.7 million elements are nonzero in the difference. The language adapters move by an RMS of 0.020, and that distance is already present at cycle 3. LoRA leaves the expert body, the action head, and the vision and language weights unchanged. The adapters and the critic are what move. The critic RMS is about 0.11 in both runs, which matches the critic learning rate of 1e-3 staying put while the actor rate or the actor surface changes.
+
+### Twenty updates of the two calmer configurations
+
+Both of the runs that finished three stable cycles were extended to 20 updates, the same 2560 environment steps as the reproduction. The actor-rate cycles took 1289 s and the whole command 3068 s. LoRA's cycles took 474 s and the whole command 1048 s. All 640 optimizer steps were applied in each run. `kl_to_reference` remained 0.
+
+| Run | Success decisions | KL mean, min to max | Clip, min to max | Ratio min | Ratio max | Value mean | Return mean | Expl. var | Pre-clip grad mean |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Reproduction | 3 | 0.22 to 1.98 | 0.45 to 0.77 | ~1e-13 | 19.2 | −0.41 to 0.34 | −0.41 to 0.34 | −9.48 to 0.94 | 63 to 135 |
+| Actor 1e-6 | 2, cycles 9 and 13 | 0.0085 to 0.033 | 0.094 to 0.26 | 0.25 | 3.28 | −0.41 to 0.22 | −0.41 to 0.19 | −1.34 to 0.81 | 127 to 201 |
+| LoRA | 1, cycle 8 | 0.0019 to 0.0076 | 0.016 to 0.11 | 0.56 | 1.57 | −0.41 to −0.07 | −0.41 to 0.04 | −1.52 to 0.87 | 8.5 to 16 |
+
+The actor-rate pre-clip means stay above 100, so the clip of 1.0 still sets the applied step and the learning rate sets its length. LoRA's pre-clip means are near 10, and the applied-norm mean dips to 0.96, so some of its steps are inside the clip. Raw advantage standard deviations reach 0.23 and 0.22 on the cycles that contain the sparse success, and stay near 0.01 to 0.05 otherwise. Standardization still rescales those windows to standard deviation 1.
+
+The in-training sample at cycle 20, eight episodes on initial states 0 and 1, scored 2/8 for the actor-rate checkpoint and 1/8 for LoRA. That sample is not the table below.
+
+### Ten-episode scores of the 20-update checkpoints
+
+The initialization column is the pretrained run already recorded on these scenario files. These passes scored the new checkpoints only, with `env_seed` 1000 and `policy_seed` 2000. Loading the actor-rate file changed 491 tensors. Loading the LoRA file changed 261 tensors.
+
+| Policy | File | Task 0 | Tasks 1, 2, and 9 | Combined |
+| --- | --- | --- | --- | --- |
+| Initialization | pretrained weights, zero adapters | 2/10 | 12/30 | 14/40 |
+| Actor learning rate 1e-6 | `runs/nominal_rl/ablate_actor_lr/step_000020.pt` | 3/10 | 13/30 | 16/40 |
+| LoRA control | `runs/nominal_rl/ablate_lora/step_000020.pt` | 2/10 | 15/30 | 17/40 |
+| Earlier checkpoint, actor 1e-5 | `runs/nominal_ppo/libero10_task0/step_000020.pt` | 0/10 | 0/30 | 0/40 |
+| Reproduction, actor 1e-5 | `runs/nominal_rl/task0_repro/step_000020.pt` | 0/10 | 0/30 | 0/40 |
+
+Actor learning rate 1e-6, task 0, wall 4757 s. Success steps 365, 378, and 461. By simulator step 100, 200, 300, 400, and 520: 0, 0, 0, 2, 3 of 10. Tasks 1, 2, and 9 took 5515 s.
+
+| Task | Successes | Success steps |
+| --- | --- | --- |
+| 1 | 4/10 | 300, 323, 326, 382 |
+| 2 | 4/10 | 192, 225, 262, 279 |
+| 9 | 5/10 | 265, 281, 310, 312, 432 |
+
+Across those 30 episodes the counts by steps 100, 200, 300, 400, and 520 are 0, 1, 7, 12, and 13.
+
+LoRA, task 0, wall 2155 s. Success steps 321 and 399. By the same budgets: 0, 0, 0, 2, 2 of 10. Tasks 1, 2, and 9 took 5548 s.
+
+| Task | Successes | Success steps |
+| --- | --- | --- |
+| 1 | 4/10 | 279, 300, 307, 516 |
+| 2 | 6/10 | 210, 242, 262, 265, 272, 289 |
+| 9 | 5/10 | 275, 284, 292, 331, 444 |
+
+Across those 30 episodes the counts by steps 100, 200, 300, 400, and 520 are 0, 0, 11, 13, and 15.
+
+On this paired sample both calmer checkpoints succeed on the training task and on the three tasks the update did not train. The counts sit next to the initialization's 14/40. They do not establish that PPO improved success. They also do not repeat the 0/40 of the actor learning rate 1e-5 checkpoints. Ten episodes per task are too few to treat either difference as a measured gain or as a measured preservation of the pretrained policy.
+
+No learning recipe is selected. LoRA kept mean approximate KL below 0.008 for all 20 cycles and is a declared control whose action expert body does not train. The lower learning rate kept the recommended surface and kept mean approximate KL below 0.034, with ratio maxima still as large as 3.28. The moderate-task configuration stays unlaunched.
+
+## Changes that were not put into these runs
+
+Four other levers show up in the trainer, and none of them was added to the three files above.
+
+KL early stopping inside a cycle would break the loop `for t in range(rollout_steps)` when the logged approximate KL, which is already the PPO-ratio estimator, crosses a threshold. The loss line would stay `pg_loss + value_coef * v_loss + kl_coef * kl_penalty`. The number of the 32 sequential steps that actually run would change. The existing tripwire is a different switch: it is off in these configs, it watches the last step's ratio over whole cycles, and it stops the run rather than the inner loop.
+
+A longer rollout is `--rollout_steps`. GAE and the reward window would grow with it, which matters because the paired successes on these tasks sit between simulator steps 192 and 516. The same flag currently also sets the number of optimizer steps, one per stored timestep. Lengthening the rollout without changing that loop would add steps of the kind the lower learning rate was shrinking. That is two changes, and it was not made.
+
+A critic-only warm-up would leave the actor parameter group unstepped for some cycles. The optimizer already has separate actor and critic groups, and every `ppo_step_stored` call steps both. There is no cycle range that skips the actor. The loss formula could stay. The schedule would change. These logs show the critic moving by an RMS near 0.11 while the full-rank expert body at learning rate 1e-6 barely moves, which is why a warm-up remains a later experiment.
+
+A larger batch is more copies in `--tasks`. That changes the four-row gradient inside each of the 32 steps and leaves the 32 steps in place. Gradient accumulation is already an argument of `ppo_step_stored` (`accum_index`, `accum_total`) and the trainer never passes it, so each timestep is its own optimizer step. Wiring it would backward once per timestep and step once per group of timesteps, which reduces the number of updates per rollout without changing the loss. One forward still has to belong to one timestep: the trainer's comment says a wider slice would pair one observation with several timesteps' trajectories. That wiring was not added.
 
 ## Limitations
 
-- Twenty updates and 2560 environment steps are a contact-scale run. Three success decisions are not a learning curve.
-- Fourteen successes in forty episodes, and zero for each of the two 20-update checkpoints on those same episodes, are one paired sample per file. The zeros include the training task and three tasks the update did not train. They do not establish that PPO helped, and they do not establish catastrophic forgetting.
-- The GPUs were already busy. The wall times are shared-machine times.
-- The reproduction's in-training eval is eight episodes. The reported comparison for that file is the ten-episode table above.
+- Twenty updates and 2560 environment steps are a contact-scale run. A handful of success decisions is not a learning curve.
+- Fourteen, sixteen, and seventeen successes in forty episodes, and zero for each actor learning rate 1e-5 checkpoint, are one paired sample per file. They do not establish that PPO helped, and they do not establish catastrophic forgetting.
+- The lower learning rate and the LoRA control are calmer optimizations on this sample. They are not a selected training recipe.
+- The GPUs were already busy. The wall times are shared-machine times. Process memory above is one sample during the three-cycle runs.
+- In-training evaluation is eight episodes. The reported comparison is the ten-episode scenario table.
 - Seen, unseen, and severity scenarios are not in this branch. The perturbation package was not added.
 - The old 2/8 versus 0/8 comparison was not recomputed. It did not pin the flow noise.
-- The three ablation files and the moderate-task training config have not been run.
+- `configs/nominal_ppo_libero10_moderate.json` has not been run. The reference-KL file was invoked and refused, and it was not rewritten into a second change.
